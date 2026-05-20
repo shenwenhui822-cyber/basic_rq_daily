@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # basic_rq 每日更新（给同事 · 自包含分包）
 
 本目录可 **单独打 zip** 发给同事。**安全**：多个脚本内含米筐 `rq.init(账号, 密码)`，外发前请改为同事账号或删除密码由对方本地填写。
@@ -187,3 +188,4 @@ MC400、全市场日线价量等仍在主仓库其它脚本；可从 **`UpdataDa
 ## 十二、RQ 1 分钟线（独立分包）
 
 秒级流量大，已从本目录拆至同级 **`packforcolleague/rq_minute_daily/`**（单日 `update_rqMinPrice`、区间 `rq_getRangeMinPrice`），需要时另行 zip。
+
