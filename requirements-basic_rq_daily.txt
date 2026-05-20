@@ -1,0 +1,8 @@
+# basic_rq 每日更新链（Python 依赖，需与仓库内脚本版本匹配）
+pandas>=2.0
+numpy>=1.24
+pymongo>=4.0
+rqdatac
+psutil
+loguru
+python-dateutil>=2.8
