@@ -10,13 +10,16 @@
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pymongo
 import rqdatac as rq
+
+from usedbdef import get_client
+from trade_date_utils import parse_explicit_date_arg, previous_trade_date
 
 
 try:
@@ -25,23 +28,6 @@ try:
 except Exception as e:
     print(f"❌ RQData 连接失败：{e}")
     raise
-
-
-def get_client(c_from: str = "local") -> pymongo.MongoClient:
-    client_dict = {
-        "local": {"host": "127.0.0.1", "port": 27017, "user": None, "pwd": None},
-    }
-    config = client_dict.get(c_from)
-    if not config:
-        raise ValueError(f"传入的数据库目标服务器有误 {c_from}，请检查 {list(client_dict.keys())}")
-
-    if config.get("user") and config.get("pwd"):
-        client_uri = f"mongodb://{config['user']}:{config['pwd']}@{config['host']}:{config['port']}"
-    else:
-        client_uri = f"mongodb://{config['host']}:{config['port']}"
-
-    print(f"正在连接到 {c_from} 数据库：{config['host']}:{config['port']}")
-    return pymongo.MongoClient(client_uri)
 
 
 def _is_trade_day(today_str: str, trade_dates_path: str) -> bool:
@@ -152,7 +138,7 @@ def update_rq_SWL2(
     today_str: str,
     trade_dates_path: str,
     *,
-    mongo_alias: str = "local",
+    mongo_alias: str = "wonderwz27018_rw",
     mongo_db: str = "basic_rq",
     mongo_collection: str = "rq_daily_indusSWL2",
 ) -> bool:
@@ -181,14 +167,29 @@ def update_rq_SWL2(
     return True
 
 
+def _cli_target_date_str(trade_dates_path: str) -> str:
+    """--date 显式指定；省略则为 T-1（上一交易日）。"""
+    p = argparse.ArgumentParser(description="更新 rq_daily_indusSWL2")
+    p.add_argument(
+        "--date",
+        "-d",
+        default=None,
+        help="目标交易日；默认 T-1（上一交易日）",
+    )
+    args = p.parse_args()
+    if not args.date:
+        return previous_trade_date(trade_dates_path, fmt="%Y/%m/%d")
+    return parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+
+
 if __name__ == "__main__":
     TRADE_DATES_PATH = str(Path(__file__).resolve().parent / "trade_dates_all.csv")
-    TODAY_STR = datetime.now().strftime("%Y/%m/%d")
+    TODAY_STR = _cli_target_date_str(TRADE_DATES_PATH)
 
     result = update_rq_SWL2(
         today_str=TODAY_STR,
         trade_dates_path=TRADE_DATES_PATH,
-        mongo_alias="local",
+        mongo_alias="wonderwz27018_rw",
         mongo_db="basic_rq",
         mongo_collection="rq_daily_indusSWL2",
     )

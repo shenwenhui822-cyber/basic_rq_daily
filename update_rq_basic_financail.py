@@ -15,11 +15,18 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pymongo
 import rqdatac as rq
 
+from usedbdef import get_client
+from trade_date_utils import parse_explicit_date_arg, previous_trade_date
 
-DATE_FMT_DB = "%Y/%m/%d"
+
+DATE_FMT_DB = "%Y-%m-%d"
+
+
+def _norm_date_str(s: str) -> str:
+    """统一为 YYYY-MM-DD（入库与查询均用此格式）。"""
+    return pd.Timestamp(str(s).strip().replace("/", "-")).strftime(DATE_FMT_DB)
 
 FACTOR_MAP = {
     "mkt_cap_ard": "market_cap_3",
@@ -37,22 +44,6 @@ except Exception as e:
     raise
 
 
-def get_client(c_from: str = "local") -> pymongo.MongoClient:
-    client_dict = {
-        "local": {"host": "127.0.0.1", "port": 27017, "user": None, "pwd": None},
-    }
-    config = client_dict.get(c_from)
-    if not config:
-        raise ValueError(f"传入的数据库目标服务器有误 {c_from}，请检查 {list(client_dict.keys())}")
-
-    if config.get("user") and config.get("pwd"):
-        client_uri = f"mongodb://{config['user']}:{config['pwd']}@{config['host']}:{config['port']}"
-    else:
-        client_uri = f"mongodb://{config['host']}:{config['port']}"
-    print(f"正在连接到 {c_from} 数据库：{config['host']}:{config['port']}")
-    return pymongo.MongoClient(client_uri)
-
-
 def _rq_code_to_display(code_rq: str) -> str:
     if ".XSHE" in code_rq:
         return "SZ" + code_rq.split(".")[0]
@@ -68,19 +59,14 @@ def _df_nan_to_none(df: pd.DataFrame) -> pd.DataFrame:
 def _is_trade_day(today_str: str, trade_dates_path: str) -> bool:
     df = pd.read_csv(trade_dates_path)
     df["trade_date"] = pd.to_datetime(df["trade_date"])
-    today_date = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d").date()
+    today_date = datetime.strptime(_norm_date_str(today_str), DATE_FMT_DB).date()
     return today_date in df["trade_date"].dt.date.values
 
 
 def _load_today_base_info_codes(*, table: Any, today_str: str) -> list[str]:
-    day_variants = [today_str]
-    if "/" in today_str:
-        day_variants.append(today_str.replace("/", "-"))
-    elif "-" in today_str:
-        day_variants.append(today_str.replace("-", "/"))
-
+    day = _norm_date_str(today_str)
     cursor = table.find(
-        {"date": {"$in": day_variants}},
+        {"date": day},
         {"_id": 0, "code_rq": 1},
     )
     df = pd.DataFrame(list(cursor))
@@ -160,7 +146,7 @@ def _fetch_basic_financial_for_today(
 
     out = pd.concat(parts, axis=0)
     out = out.reset_index().rename(columns={"order_book_id": "code_rq"})
-    out["date"] = pd.Timestamp(today_str).strftime(DATE_FMT_DB)
+    out["date"] = _norm_date_str(today_str)
     out["code"] = out["code_rq"].astype(str).map(_rq_code_to_display)
 
     cols = [
@@ -184,12 +170,13 @@ def update_rq_basic_financail(
     today_str: str,
     trade_dates_path: str,
     *,
-    mongo_alias: str = "local",
+    mongo_alias: str = "wonderwz27018_rw",
     base_db: str = "basic_rq",
     base_collection: str = "rq_base_info",
     target_db: str = "basic_rq",
     target_collection: str = "rq_basic_financial",
 ) -> bool:
+    today_str = _norm_date_str(today_str)
     print(f"\n=== 开始更新 rq_basic_financial，日期：{today_str} ===")
 
     if not _is_trade_day(today_str, trade_dates_path):
@@ -215,12 +202,7 @@ def update_rq_basic_financail(
         print("❌ 当天财务数据为空，更新失败")
         return False
 
-    day_variants = [today_str]
-    if "/" in today_str:
-        day_variants.append(today_str.replace("/", "-"))
-    elif "-" in today_str:
-        day_variants.append(today_str.replace("-", "/"))
-    dr = target_table.delete_many({"date": {"$in": day_variants}})
+    dr = target_table.delete_many({"date": today_str})
     print(f"已删除当天旧记录：{dr.deleted_count} 条")
 
     docs = df_fin.to_dict("records")
@@ -229,31 +211,28 @@ def update_rq_basic_financail(
     return True
 
 
-def _cli_target_date_str() -> str:
+def _cli_target_date_str(trade_dates_path: str) -> str:
     p = argparse.ArgumentParser(description="更新 rq_basic_financial")
     p.add_argument(
         "--date",
         "-d",
         default=None,
-        help="目标日期，如 20260507、2026/05/07、2026-05-07；默认今天",
+        help="目标交易日；默认 T-1（上一交易日）",
     )
     args = p.parse_args()
     if not args.date:
-        return datetime.now().strftime("%Y/%m/%d")
-    s = str(args.date).strip()
-    if len(s) == 8 and s.isdigit():
-        return f"{s[:4]}/{s[4:6]}/{s[6:8]}"
-    return pd.Timestamp(s.replace("/", "-")).strftime("%Y/%m/%d")
+        return previous_trade_date(trade_dates_path, fmt=DATE_FMT_DB)
+    return parse_explicit_date_arg(args.date, fmt=DATE_FMT_DB)
 
 
 if __name__ == "__main__":
     TRADE_DATES_PATH = str(Path(__file__).resolve().parent / "trade_dates_all.csv")
-    TODAY_STR = _cli_target_date_str()
+    TODAY_STR = _cli_target_date_str(TRADE_DATES_PATH)
 
     result = update_rq_basic_financail(
         today_str=TODAY_STR,
         trade_dates_path=TRADE_DATES_PATH,
-        mongo_alias="local",
+        mongo_alias="wonderwz27018_rw",
         base_db="basic_rq",
         base_collection="rq_base_info",
         target_db="basic_rq",

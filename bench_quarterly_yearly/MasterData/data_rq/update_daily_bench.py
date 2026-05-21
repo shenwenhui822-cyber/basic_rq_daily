@@ -101,9 +101,9 @@ def main() -> None:
     )
     p.add_argument(
         "--auto-mode",
-        default="today_if_trade",
+        default="previous_trade",
         choices=["today_if_trade", "previous_trade"],
-        help="自动推导规则：today_if_trade(默认) / previous_trade",
+        help="自动推导规则：previous_trade(默认,T-1) / today_if_trade",
     )
     p.add_argument("--mongo-alias", default="local", help="Mongo 别名，默认 local")
     p.add_argument("--mongo-db", default="basic_rq", help="数据库名，默认 basic_rq")

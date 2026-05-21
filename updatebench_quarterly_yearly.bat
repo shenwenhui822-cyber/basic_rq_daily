@@ -19,7 +19,7 @@ set "PYTHON_EXE=C:\Users\Administrator\AppData\Local\Programs\Python\Python313\p
 
 set "MONGO_ALIAS=local"
 set "MONGO_DB=basic_rq"
-set "AUTO_MODE=today_if_trade"
+set "AUTO_MODE=previous_trade"
 
 set "SCRIPT_BENCH=%MINI_ROOT%\MasterData\data_rq\update_daily_bench.py"
 set "SCRIPT_QUARTERLY=%MINI_ROOT%\MasterData\data_rq\update_daily_rq_quarterly.py"

@@ -268,7 +268,7 @@ def main(
 ) -> None:
     parser = argparse.ArgumentParser(description="按交易日拉取全市场基本财务字段并可选落库 Mongo")
     parser.add_argument("--no-mongo", action="store_true", help="仅拉取，不写 Mongo")
-    parser.add_argument("--mongo-alias", default="local", help="get_client 别名，默认 local")
+    parser.add_argument("--mongo-alias", default="wonderwz27018_rw", help="get_client 别名，默认 wonderwz27018_rw")
     parser.add_argument("--no-split-year", action="store_true", help="不按年分段（谨慎使用）")
     args = parser.parse_args()
     if args.no_split_year:
@@ -326,6 +326,7 @@ def main(
 
 
 if __name__ == "__main__":
+    # 一次性历史补齐：修改区间（日更请用 update_rq_basic_financail.py，默认 T-1）
     START_DATE = "2026-05-12"
     END_DATE = "2026-05-12"
     SINGLE_DAY = None

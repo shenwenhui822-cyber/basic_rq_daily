@@ -2,15 +2,11 @@
 # Author: Keven Wang
 # Date: 2026-03-18
 # Illustration:
-# 1. 每日更新 rq_base_info（默认 T-1，见 trade_date_utils）
+# 1. 每日更新 rq_base_info 数据
 # =============================================================================
 import rqdatac as rq
 import pandas as pd
-import pymongo
 from typing import Any
-import psutil
-from concurrent.futures import ThreadPoolExecutor
-import numpy as np
 import logging
 import time
 import traceback
@@ -19,8 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from loguru import logger
 
-from usedbdef import get_client, insert_db_from_df
-from trade_date_utils import parse_explicit_date_arg, previous_trade_date
+from usedbdef import DEFAULT_MONGO_ALIAS, get_client, insert_db_from_df
 
 # 初始化 RQData 连接
 try:
@@ -261,7 +256,7 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
 
     print("\n正在连接数据库...")
     try:
-        client = get_client('wonderwz27018_rw')
+        client = get_client(DEFAULT_MONGO_ALIAS)
         table = client['basic_rq']['rq_base_info']
         print(f"✅ 数据库连接成功，表：{table}")
 
@@ -323,26 +318,29 @@ def update_rqbaseInfo(today_str: str, trade_dates_path: str) -> bool:
         return False
 
 
-def _cli_target_date_str(trade_dates_path: str) -> str:
-    """命令行 --date：显式指定；省略则为 T-1（上一交易日）。"""
+def _cli_target_date_str() -> str:
+    """命令行 --date：YYYYMMDD 或 YYYY/MM/DD、YYYY-MM-DD；省略则为今天。"""
     p = argparse.ArgumentParser(description="更新 rq_base_info")
     p.add_argument(
         "--date",
         "-d",
         default=None,
-        help="目标交易日，如 20260507、2026/05/07；默认 T-1（上一交易日）",
+        help="目标日期，如 20260507、2026/05/07、2026-05-07；默认今天",
     )
     args = p.parse_args()
     if not args.date:
-        return previous_trade_date(trade_dates_path, fmt="%Y/%m/%d")
-    return parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+        return datetime.now().strftime("%Y/%m/%d")
+    s = str(args.date).strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}/{s[4:6]}/{s[6:8]}"
+    return pd.Timestamp(s.replace("/", "-")).strftime("%Y/%m/%d")
 
 
 if __name__ == '__main__':
     # 配置参数
     trade_dates_path = str(Path(__file__).resolve().parent / 'trade_dates_all.csv')
 
-    today_str = _cli_target_date_str(trade_dates_path)
+    today_str = _cli_target_date_str()
     result = update_rqbaseInfo(today_str, trade_dates_path)
 
     if result:

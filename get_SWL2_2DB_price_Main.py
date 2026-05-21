@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 申万二级行业成分 + 行业指数日线价量（open/high/low/close/volume/total_turnover）落库。
 
@@ -9,41 +10,11 @@ from __future__ import annotations
 import traceback
 
 import pandas as pd
-import pymongo
 import rqdatac as rq
 
-from usedbdef import insert_db_from_df
+from usedbdef import get_client, insert_db_from_df
 
 PRICE_FIELDS = ["open", "high", "low", "close", "volume", "total_turnover"]
-
-
-def get_client(c_from: str = "89mango"):
-    client_dict = {
-        "local": {"host": "127.0.0.1", "port": 27017, "user": None, "pwd": None},
-        "neo": {"host": "192.168.1.77", "port": 27017, "user": None, "pwd": None},
-        "bob": {"host": "192.168.1.87", "port": 27017, "user": None, "pwd": None},
-        "db_u": {"user": "Tom", "pwd": "tom", "host": "192.168.1.99", "port": 29900},
-        "db_w": {"user": "Amy", "pwd": "amy", "host": "192.168.1.99", "port": 29900},
-        "admin": {"host": "192.168.1.58", "port": 27017, "user": None, "pwd": None},
-        "readonly": {"host": "192.168.1.58", "port": 27017, "user": None, "pwd": None},
-        "89mango": {"host": "192.168.1.226", "port": 27017, "user": None, "pwd": None},
-    }
-
-    config = client_dict.get(c_from)
-    if not config:
-        raise ValueError(f"传入的数据库目标服务器有误 {c_from}，请检查 {list(client_dict.keys())}")
-
-    if config["user"] and config["pwd"]:
-        client_uri = f"mongodb://{config['user']}:{config['pwd']}@{config['host']}:{config['port']}"
-    else:
-        client_uri = f"mongodb://{config['host']}:{config['port']}"
-
-    try:
-        print(f"正在连接到 {c_from} 数据库: {config['host']}:{config['port']}")
-        return pymongo.MongoClient(client_uri)
-    except pymongo.errors.PyMongoError as e:
-        print(f"无法连接到MongoDB服务器: {e}")
-        raise
 
 
 def _normalize_price_frame(px: pd.DataFrame | None) -> pd.DataFrame:
@@ -85,7 +56,7 @@ def fetch_level2_index_prices(order_book_ids: list[str], trade_date: str, chunk:
             )
             parts.append(_normalize_price_frame(px))
         except Exception as e:
-            print(f"[WARN] get_price 批次 {i}-{i + len(batch)} 失败: {e}")
+            print(f"[WARN] get_price 批次 {i}-{i + len(batch)}__{e}")
 
     if not parts:
         return pd.DataFrame(columns=["order_book_id"] + PRICE_FIELDS)
@@ -94,28 +65,26 @@ def fetch_level2_index_prices(order_book_ids: list[str], trade_date: str, chunk:
 
 def main(
     date_range,
-    mongo_client_name: str = "local",
+    mongo_client_name: str = "wonderwz27018_rw",
     save_db_name: str = "basic_rq",
     save_table_name: str = "rq_daily_indusSWL2_price",
 ):
-    """
-    获取申万二级行业成分股 + 行业指数日线六个价量字段，写入 Mongo。
+    """获取申万二级行业成分股 + 行业指数日线六个价量字段，写入 Mongo。
 
-    :param date_range: 如 {'$gte': "2025-04-30", '$lte': "2025-04-30"}
-    """
+    :param date_range: 如 {'$gte': "2025-04-30", '$lte': "2025-04-30"}"""
     try:
         rq.init("18616633529", "wuzhi2020")
-        print("[OK] RQData连接成功")
+        print("[OK] RQData 连接成功")
     except Exception as e:
-        print(f"[ERR] RQData连接失败: {e}")
+        print(f"[ERR] RQData 连接失败: {e}")
         raise
 
-    Client = get_client(mongo_client_name)
-    table = Client[save_db_name][save_table_name]
+    client = get_client(mongo_client_name)
+    table = client[save_db_name][save_table_name]
 
     try:
         df_dates = pd.DataFrame(
-            Client.economic.trade_dates.find({"trade_date": date_range}, {"_id": 0})
+            client.economic.trade_dates.find({"trade_date": date_range}, {"_id": 0})
         ).sort_values("trade_date")
 
         if not df_dates.empty:
@@ -134,9 +103,9 @@ def main(
     batch_size = 10
 
     for inputdate in date_list:
-        print(f"\n=== 处理日期: {inputdate} ===")
+        print(f"\\n=== 处理日期: {inputdate} ===")
         try:
-            start_date = inputdate.replace("-", "/")
+            start_date = str(inputdate).replace("-", "/")
             print("正在获取申万行业映射数据...")
             industry_mapping = rq.get_industry_mapping(source="sws", date=start_date, market="cn")
 
@@ -160,10 +129,10 @@ def main(
                             "third_index_name",
                         ]
                     else:
-                        raise ValueError("DataFrame列数不足，无法构建完整层级")
+                        raise ValueError("DataFrame 列数不足，无法构建完整层级")
                     print("数据格式识别成功 - 完整层级结构")
                 else:
-                    raise ValueError(f"未知的数据类型，需要DataFrame格式: {type(industry_mapping)}")
+                    raise ValueError(f"未知的数据类型，需要 DataFrame 格式: {type(industry_mapping)}")
             except Exception as e:
                 print(f"数据转换失败: {e}")
                 print(f"原始数据详情: {industry_mapping}")
@@ -175,7 +144,7 @@ def main(
             )
             print(f"共获取到 {len(df_level2)} 个二级行业")
 
-            print("\n开始获取各二级行业成分股...")
+            print("\\n开始获取各二级行业成分股...")
             all_stocks = []
             total_industries = len(df_level2)
 
@@ -231,11 +200,11 @@ def main(
                         continue
 
             if not all_stocks:
-                print("\n[ERR] 未获取到任何成分股数据")
+                print("\\n[ERR] 未获取到任何成分股数据")
                 continue
 
             df_stocks = pd.DataFrame(all_stocks)
-            print("\n正在转换为行业分组格式...")
+            print("\\n正在转换为行业分组格式...")
             df_industry_stocks = (
                 df_stocks.groupby(["level2_code", "level2_name"])["stock_code"]
                 .apply(lambda x: str(list(x)))
@@ -249,9 +218,8 @@ def main(
                 columns={"level2_name": "name", "stock_code": "stocks"}
             )
 
-            # 行业指数日线价量（与 demogetIndus 一致六字段）
             ob_ids = df_industry_stocks["level2_code"].astype(str).unique().tolist()
-            print(f"\n正在拉取 {len(ob_ids)} 个行业指数日线价量字段: {PRICE_FIELDS} ...")
+            print(f"\\n正在拉取 {len(ob_ids)}__{PRICE_FIELDS} ...")
             price_df = fetch_level2_index_prices(ob_ids, str(inputdate))
             df_industry_stocks = df_industry_stocks.merge(
                 price_df,
@@ -263,25 +231,26 @@ def main(
             out_cols = ["date", "indus_code", "name", "stocks"] + PRICE_FIELDS
             df_industry_stocks = df_industry_stocks[out_cols]
 
-            print("\n正在将数据插入到数据库...")
+            print("\\n正在将数据插入到数据库...")
             insert_db_from_df(table, df_industry_stocks)
             print(f"[OK] 数据插入完成，共插入 {len(df_industry_stocks)} 条记录")
             success_count += 1
 
         except Exception as e:
-            print(f"处理日期 {inputdate} 时出错: {e}")
+            print(f"处理日期 {inputdate}__{e}")
             traceback.print_exc()
             continue
 
-    print(f"\n=== 处理完成 ===")
+    print(f"\\n=== 处理完成 ===")
     print(f"总共有 {total_count} 个交易日")
     print(f"成功处理 {success_count} 个交易日")
     print(f"失败 {total_count - success_count} 个交易日")
 
 
 if __name__ == "__main__":
+    # 一次性历史补齐：修改 date_range（日更请用 update_rq_SWL2_price.py，默认 T-1）
     date_range = {"$gte": "2026-05-12", "$lte": "2026-05-12"}
-    mongo_client_name = "local"
+    mongo_client_name = "wonderwz27018_rw"
     save_db_name = "basic_rq"
     save_table_name = "rq_daily_indusSWL2_price"
     main(

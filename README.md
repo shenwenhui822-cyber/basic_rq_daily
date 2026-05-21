@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # basic_rq 每日更新（给同事 · 自包含分包）
 
 本目录可 **单独打 zip** 发给同事。**安全**：多个脚本内含米筐 `rq.init(账号, 密码)`，外发前请改为同事账号或删除密码由对方本地填写。
@@ -19,11 +18,13 @@
 | `update_rq_in_index.py` | A：每日 `rq_base_index`（单日） |
 | `get_rq_in_index.py` | A：被上一脚本引用；也可改区间做**回填** |
 | `trade_dates_all.csv` | A / SWL2：判断交易日（与上述 `.py` **同目录**） |
+| `trade_date_utils.py` | T-1 交易日推导（日更脚本共用） |
 | `run_swl2_daily.bat` | **SWL2**：`rq_daily_indusSWL2` + `rq_daily_indusSWL2_price` |
 | `update_rq_SWL2.py` | SWL2：申万二级行业成分 |
 | `update_rq_SWL2_price.py` | SWL2：行业成分 + 行业指数日 K 价量 |
 | `get_SWL2_2DB_price_Main.py` | SWL2：价量拉取逻辑（被 `update_rq_SWL2_price` 引用） |
 | `get_SWL2_2DB_Main.py` | SWL2：区间/全量入库（按需改日期后手动跑） |
+| `mongo_connect.py` | Mongo 连接配置（`local` / `wonderwz27018_*` 等别名） |
 | `usedbdef.py` | SWL2：`insert_db_from_df` / `get_client`（与 `update_rqbaseInfo` 并存，勿删） |
 | `bench_quarterly_yearly\` | B：迷你工程根（见下文），**勿改其内部相对层级** |
 
@@ -49,10 +50,24 @@
 ## 三、A 链路：扁平脚本（顺序不可颠倒）
 
 1. `update_rqbaseInfo.py` → `rq_base_info`  
-2. `update_rq_basic_financail.py` → `rq_basic_financial`（依赖当日步骤 1）  
-3. `update_rq_in_index.py` → `rq_base_index`（依赖当日 `rq_base_info`）
+2. `update_rq_basic_financail.py` → `rq_basic_financial`（依赖**同一交易日**步骤 1 已入库）  
+3. `update_rq_in_index.py` → `rq_base_index`（依赖**同一交易日** `rq_base_info`）
 
 一键：本目录下 **`run_basic_rq_daily.bat`**（改好其中 `PYTHON=`；计划任务请注释 `pause`）。
+
+### 日更默认交易日：T-1（上一交易日）
+
+下列脚本在**未传 `--date`** 时，均通过 `trade_date_utils.previous_trade_date` 取 **严格早于今天** 的最近交易日落库（米筐当日数据通常晚间才稳定，故不用「今天」）：
+
+| 脚本 | 集合 |
+|------|------|
+| `update_rqbaseInfo.py` | `rq_base_info` |
+| `update_rq_basic_financail.py` | `rq_basic_financial` |
+| `update_rq_in_index.py` | `rq_base_index` |
+| `update_rq_SWL2.py` | `rq_daily_indusSWL2` |
+| `update_rq_SWL2_price.py` | `rq_daily_indusSWL2_price` |
+
+补跑指定日：`python update_rqbaseInfo.py --date 20260515`（亦支持 `2026/05/15`、`2026-05-15`）。建议计划任务安排在 **20:00 之后**，与 T-1 策略一致。
 
 ### 申万二级 SWL2（同目录 · `run_swl2_daily.bat`）
 
@@ -77,7 +92,7 @@
 2. `update_daily_rq_quarterly.py` → 当日 `rq_quarterly` 米筐更新 + 历史区间 **backfill**（默认自 `2020-01-02` 至本次 `pre_trade_day`）  
 3. `update_daily_rq_yearly.py` → 当日 `rq_yearly` + 同上 backfill  
 
-默认参数：`--mongo-alias local`、`--mongo-db basic_rq`、`--auto-mode today_if_trade`（与原版 bat 一致）。  
+默认参数：`--mongo-alias local`、`--mongo-db basic_rq`、`--auto-mode previous_trade`（T-1，与 A/SWL2 日更一致）。  
 修改方式：编辑 **`updatebench_quarterly_yearly.bat`** 顶部的 `MONGO_*`、`AUTO_MODE`、`PYTHON_EXE`。
 
 ### 4.3 重要前置：`economic.trade_dates`
@@ -130,7 +145,7 @@ B 耗时会明显长于 A（含逐票 backfill）。若只想日更、暂不扫�
 ## 六、环境与安装
 
 - **Python** 3.10+ 推荐。  
-- **MongoDB**：`DataBase/db_client.py` 中 `local` 默认 `127.0.0.1:27017`；其它别名见该文件。  
+- **MongoDB**：本目录 `mongo_connect.py` 中 `local` 默认 `192.168.110.199:27018`（可用 `MONGO_HOST` / `MONGO_PORT` 覆盖）；日更写库多用 `wonderwz27018_rw`。  
 - **安装依赖**：
 
 ```bat
@@ -139,14 +154,30 @@ pip install -r requirements-basic_rq_daily.txt
 
 ---
 
-## 七、区间回填 `rq_base_index`（非每日定时）
+## 七、历史数据补齐（一次性，按顺序）
 
-编辑 **`get_rq_in_index.py`** 中的 `RANGE_START`、`RANGE_END`，在本目录执行：
+先改各脚本底部日期/Mongo 常量，再在本目录执行。写库默认别名 **`wonderwz27018_rw`**（见 `mongo_connect.py`）。
+
+| 顺序 | 脚本 | 目标集合 | 改什么 |
+|------|------|----------|--------|
+| 1 | `load_rqbaseInfofastmain.py` | `rq_base_info` | `__main__` 里 `Client.economic.trade_dates` 查询区间，或循环 `input_date` |
+| 2 | `load_rq_basic_financialmain.py` | `rq_basic_financial` | `START_DATE` / `END_DATE`（或 `SINGLE_DAY`） |
+| 3 | `get_SWL2_2DB_Main.py` | `rq_daily_indusSWL2` | `date_range` 的 `$gte` / `$lte` |
+| 4 | `get_SWL2_2DB_price_Main.py` | `rq_daily_indusSWL2_price` | 同上（建议在步骤 3 之后，含行业指数价量） |
+| 5 | `get_rq_in_index.py` | `rq_base_index` | `RANGE_START` / `RANGE_END`（须对应区间已在 `rq_base_info`） |
+
+示例：
 
 ```bat
 cd /d 本目录
+python load_rqbaseInfofastmain.py
+python load_rq_basic_financialmain.py
+python get_SWL2_2DB_Main.py
+python get_SWL2_2DB_price_Main.py
 python get_rq_in_index.py
 ```
+
+区间指数成分亦可只改 **`get_rq_in_index.py`** 后单独执行（见上表第 5 行）。
 
 ---
 
@@ -155,7 +186,7 @@ python get_rq_in_index.py
 - A：`...\basic_rq_daily\run_basic_rq_daily.bat`（注释末尾 `pause`）  
 - SWL2：`...\basic_rq_daily\run_swl2_daily.bat`（按需；计划任务可注释 `pause`）  
 - B：`...\basic_rq_daily\updatebench_quarterly_yearly.bat`（无 `pause`，可直接挂计划任务）  
-- 时间：在米筐与 `rq_base_info` 数据就绪之后；B 建议放在 A 之后一段间隔。
+- 时间：**20:00 后**跑 A/SWL2（T-1 日更）；B 建议再晚一段，且需 `economic.trade_dates` 已同步。
 
 ---
 
@@ -187,5 +218,4 @@ MC400、全市场日线价量等仍在主仓库其它脚本；可从 **`UpdataDa
 
 ## 十二、RQ 1 分钟线（独立分包）
 
-秒级流量大，已从本目录拆至同级 **`packforcolleague/rq_minute_daily/`**（单日 `update_rqMinPrice`、区间 `rq_getRangeMinPrice`），需要时另行 zip。
-
+秒级流量大，已拆至子目录 **`rq_minute_daily/`**（单日 `update_rqMinPrice`、区间 `rq_getRangeMinPrice`）；Mongo 配置共用本目录 **`mongo_connect.py`**，打 zip 时请与 `rq_minute_daily` 一并包含。

@@ -1,15 +1,23 @@
+import sys
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 from typing import Any
 import psutil
 from concurrent.futures import ThreadPoolExecutor
 
-from mongo_connect import get_client
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from mongo_connect import get_client  # noqa: E402
 
 __all__ = ["get_client", "insert_db_from_df"]
 
+DEFAULT_MONGO_ALIAS = "wonderwz27018_rw"
 
-# ==================== 数据库插入相关函数 ====================
+
 def _thread_insert2db(table, df):
     """线程插入数据到数据库"""
     try:

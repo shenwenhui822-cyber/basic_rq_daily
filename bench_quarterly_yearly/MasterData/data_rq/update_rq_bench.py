@@ -19,12 +19,13 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import pymongo
 import rqdatac as rq
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+from DataBase.db_client import get_client
 
 try:
     rq.init("18616633529", "wuzhi2020")
@@ -32,20 +33,6 @@ try:
 except Exception as e:
     print(f"❌ RQData 连接失败：{e}")
     raise
-
-
-def get_client(c_from: str = "local") -> pymongo.MongoClient:
-    client_dict = {
-        "local": {"host": "127.0.0.1", "port": 27017, "user": None, "pwd": None},
-    }
-    config = client_dict.get(c_from)
-    if not config:
-        raise ValueError(f"未知 mongo_alias: {c_from}")
-    if config.get("user") and config.get("pwd"):
-        uri = f"mongodb://{config['user']}:{config['pwd']}@{config['host']}:{config['port']}"
-    else:
-        uri = f"mongodb://{config['host']}:{config['port']}"
-    return pymongo.MongoClient(uri)
 
 
 def _norm_day(s: str) -> str:

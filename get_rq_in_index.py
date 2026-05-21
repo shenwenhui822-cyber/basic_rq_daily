@@ -35,6 +35,7 @@ CSI2000_CANDIDATES: tuple[str, ...] = ("932000.INDX", "932000.XSHG", "932000.CSI
 CSI2000_MIN_COMPONENTS: int = 500
 FLAG_COLS = ["in_SZ50", "in_HS300", "in_ZZ500", "in_ZZ1000", "in_ZZ2000"]
 
+# 一次性历史补齐区间（日更请用 update_rq_in_index.py，默认 T-1）
 RANGE_START = "2026-01-01"
 RANGE_END = "2026-03-31"
 
@@ -122,7 +123,7 @@ def build_index_frame(info_table: Any, date_str: str, index_sets: dict[str, set[
 
 
 def build_rq_base_index(
-    client_from: str = "local",
+    client_from: str = "wonderwz27018_rw",
     replace_existing: bool = True,
     start: str = RANGE_START,
     end: str = RANGE_END,

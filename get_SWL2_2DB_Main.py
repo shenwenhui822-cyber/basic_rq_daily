@@ -1,42 +1,11 @@
 import rqdatac as rq
 import pandas as pd
-import pymongo
-from usedbdef import insert_db_from_df
-
-def get_client(c_from='89mango'):
-    # 统一配置为字典格式，明确各字段
-    client_dict = {
-        'local': {'host': '127.0.0.1', 'port': 27017, 'user': None, 'pwd': None},  # 无认证
-        'neo': {'host': '192.168.1.77', 'port': 27017, 'user': None, 'pwd': None},   # 无认证
-        'bob': {'host': '192.168.1.87', 'port': 27017, 'user': None, 'pwd': None},   # 无认证
-        'db_u': {'user': 'Tom', 'pwd': 'tom', 'host': '192.168.1.99', 'port': 29900},  # 带认证
-        'db_w': {'user': 'Amy', 'pwd': 'amy', 'host': '192.168.1.99', 'port': 29900},  # 带认证
-        'admin': {'host': '192.168.1.58', 'port': 27017, 'user': None, 'pwd': None},    # 无认证
-        'readonly': {'host': '192.168.1.58', 'port': 27017, 'user': None, 'pwd': None}, # 无认证
-        '89mango': {'host': '192.168.1.226', 'port': 27017, 'user': None, 'pwd': None}   # 无认证（若需要认证需补充user/pwd）
-    }
-    
-    config = client_dict.get(c_from)
-    if not config:
-        raise ValueError(f'传入的数据库目标服务器有误 {c_from}，请检查 {list(client_dict.keys())}')
-    
-    # 动态构造URI（自动处理认证）
-    if config['user'] and config['pwd']:
-        client_uri = f"mongodb://{config['user']}:{config['pwd']}@{config['host']}:{config['port']}"
-    else:
-        client_uri = f"mongodb://{config['host']}:{config['port']}"
-    
-    try:
-        print(f"正在连接到 {c_from} 数据库: {config['host']}:{config['port']}")
-        return pymongo.MongoClient(client_uri)
-    except pymongo.errors.PyMongoError as e:
-        print(f"无法连接到MongoDB服务器: {e}")
-        raise
+from usedbdef import get_client, insert_db_from_df
 
 
 def main(
     date_range,
-    mongo_client_name='local',
+    mongo_client_name='wonderwz27018_rw',
     save_db_name='basic_rq',
     save_table_name='rq_daily_indusSWL2'
 ):
@@ -244,10 +213,10 @@ def main(
 
 
 if __name__ == '__main__':
-    # 定义日期范围
+    # 一次性历史补齐：修改 date_range（日更请用 update_rq_SWL2.py，默认 T-1）
     date_range = {'$gte': "2025-12-01", '$lte': "2026-04-10"}
     # 定义落库位置
-    mongo_client_name = 'local'
+    mongo_client_name = 'wonderwz27018_rw'
     save_db_name = 'basic_rq'
     save_table_name = 'rq_daily_indusSWL2'
     # 调用主函数

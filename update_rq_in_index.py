@@ -2,7 +2,7 @@
 """
 定时任务用：按「单个 A 股交易日」刷新 basic_rq.rq_base_index。
 
-逻辑与 get_rq_in_index.py 一致，默认更新「<= 今天的最近一个 cn 交易日」，
+逻辑与 get_rq_in_index.py 一致，默认更新 T-1（上一交易日），
 且要求当日已在 rq_base_info 中存在（请先跑完当日 rq 基础信息更新）。
 
 用法：
@@ -14,9 +14,12 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import date
+from pathlib import Path
 from time import perf_counter
 
 import rqdatac as rq
+
+from trade_date_utils import parse_explicit_date_arg, previous_trade_date
 
 from get_rq_in_index import (
     build_index_frame,
@@ -49,7 +52,7 @@ def last_cn_trading_day_on_or_before(day: date) -> str:
 def update_rq_base_index_one_day(
     trade_date: str,
     *,
-    client_from: str = "local",
+    client_from: str = "wonderwz27018_rw",
     replace_existing: bool = True,
 ) -> int:
     """
@@ -101,9 +104,9 @@ def main(argv: list[str] | None = None) -> int:
         "--date",
         dest="trade_date",
         default=None,
-        help="交易日 YYYY-MM-DD；省略则取「<= 今天的最近 cn 交易日」",
+        help="交易日 YYYY-MM-DD；省略则取 T-1（上一交易日）",
     )
-    p.add_argument("--client-from", default="local", help="Mongo 配置键，默认 local")
+    p.add_argument("--client-from", default="wonderwz27018_rw", help="Mongo 配置键，默认 wonderwz27018_rw")
     p.add_argument(
         "--no-delete",
         action="store_true",
@@ -115,8 +118,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.trade_date:
             td = _norm_input_date(args.trade_date)
         else:
-            td = last_cn_trading_day_on_or_before(date.today())
-            _log(f"未指定 --date，使用最近 cn 交易日：{td}")
+            csv_path = Path(__file__).resolve().parent / "trade_dates_all.csv"
+            td = previous_trade_date(csv_path, fmt="%Y-%m-%d")
+            _log(f"未指定 --date，使用 T-1 交易日：{td}")
 
         n = update_rq_base_index_one_day(
             td,

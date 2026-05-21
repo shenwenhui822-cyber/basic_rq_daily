@@ -1,0 +1,7 @@
+# RQ 1 分钟线分包
+pandas>=2.0
+numpy>=1.24
+pymongo>=4.0
+rqdatac
+psutil
+loguru
