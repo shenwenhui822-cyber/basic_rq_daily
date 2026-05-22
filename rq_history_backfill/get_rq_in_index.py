@@ -8,6 +8,19 @@
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__, daily=True)
+
+import argparse
+
 from datetime import date
 from time import perf_counter
 from typing import Any
@@ -15,14 +28,22 @@ from typing import Any
 import pandas as pd
 import rqdatac as rq
 
-from update_rqbaseInfo import get_client, insert_db_from_df
+from usedbdef import get_client, insert_db_from_df
+
+_RQ_INITIALIZED = False
+
+
+def _init_rq() -> None:
+    global _RQ_INITIALIZED
+    if _RQ_INITIALIZED:
+        return
+    rq.init("18616633529", "wuzhi2020")
+    _RQ_INITIALIZED = True
 
 
 def _log(msg: str, *, flush: bool = True) -> None:
     print(msg, flush=flush)
 
-
-# RQData 随 update_rqbaseInfo 导入时已 rq.init；此处切勿重复 init，否则会触发 rqdatac 重复初始化告警。
 
 INDEX_DEFS: list[tuple[str, str]] = [
     ("000016.XSHG", "in_SZ50"),
@@ -135,6 +156,7 @@ def build_rq_base_index(
 
     :param retain_combined_df: True 时在内存中保留并返回全区间合并 DataFrame（大区间占用高）；默认仅累计行数日志。
     """
+    _init_rq()
     client = get_client(client_from)
     info_table = client["basic_rq"]["rq_base_info"]
     index_table = client["basic_rq"]["rq_base_index"]
@@ -196,5 +218,34 @@ def build_rq_base_index(
     return pd.DataFrame()
 
 
+def _cli_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="历史补齐 rq_base_index：宽基成分 0/1（须区间内 rq_base_info 已存在）",
+    )
+    p.add_argument(
+        "--start",
+        default=RANGE_START,
+        help="区间起（含）：YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD",
+    )
+    p.add_argument("--end", default=RANGE_END, help="区间止（含），格式同 --start")
+    p.add_argument(
+        "--mongo-alias",
+        default="wonderwz27018_rw",
+        help="Mongo 连接别名",
+    )
+    p.add_argument(
+        "--keep-existing",
+        action="store_true",
+        help="不先删除区间内旧 rq_base_index 记录",
+    )
+    return p.parse_args()
+
+
 if __name__ == "__main__":
-    build_rq_base_index()
+    args = _cli_args()
+    build_rq_base_index(
+        client_from=args.mongo_alias,
+        replace_existing=not args.keep_existing,
+        start=args.start,
+        end=args.end,
+    )

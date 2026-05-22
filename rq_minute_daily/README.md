@@ -17,7 +17,7 @@
 | `rq_getRangeDailyPrice.py` | 被区间分钟引用（lookup `date`+`code_rq`） |
 | `get_Min1Test1.py` / `get_dayDataTest1.py` | 分钟拉数与字段辅助 |
 | `usedbdef.py` | `get_client` / `insert_db_from_df`（连接读上级 **`../mongo_connect.py`**） |
-| `trade_dates_all.csv` | `update_rqMinPrice` 判断交易日（与脚本同目录） |
+| （上级）`trade_date_utils.py` | 读 Mongo `economic.trade_dates` 判断交易日 / T-1 |
 | `sync_from_repo.bat` | 维护：从 `UpdataDaily` 根覆盖上述列表 |
 | `requirements-rq_minute.txt` | pip 依赖 |
 
@@ -32,7 +32,7 @@
 
 ## 三、与 `basic_rq_daily` 的关系
 
-若同事已跑 **`basic_rq_daily`** 里的 `update_rqbaseInfo.py`，本目录可**只跑** `update_rqMinPrice.py`，避免重复拉基础表；若无法保证 `rq_base_info` 已更新，请继续用完整 `run_minute_daily.bat`。
+若同事已跑 **`basic_rq_daily/rq_daily_update/update_rqbaseInfo.py`**（或本目录自带的 `update_rqbaseInfo.py` 副本），可**只跑** `update_rqMinPrice.py`，避免重复拉基础表；若无法保证 `rq_base_info` 已更新，请继续用完整 `run_minute_daily.bat`。
 
 ---
 

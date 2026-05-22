@@ -1,19 +1,40 @@
-import rqdatac as rq
-import pandas as pd
+import sys
+from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__)
+
+import argparse
 import logging
 import time
 
+import pandas as pd
+import rqdatac as rq
+
+from trade_date_utils import parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
 logger = logging.getLogger(__name__)
 
-# 初始化RQData连接
-try:
-    rq.init('18616633529', 'wuzhi2020')
-    print("✅ RQData连接成功")
-except Exception as e:
-    print(f"❌ RQData连接失败: {e}")
-    raise
+_RQ_INITIALIZED = False
+
+
+def _init_rq() -> None:
+    global _RQ_INITIALIZED
+    if _RQ_INITIALIZED:
+        return
+    try:
+        rq.init("18616633529", "wuzhi2020")
+        print("RQData 连接成功")
+        _RQ_INITIALIZED = True
+    except Exception as e:
+        print(f"RQData 连接失败: {e}")
+        raise
 
 
 def get_ra_base_info(input_date: str) -> pd.DataFrame:
@@ -237,14 +258,70 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
     
     return df_results
 
-if __name__ == '__main__':
-    # 一次性历史补齐：修改下方 trade_dates 查询区间后执行（非日更，勿用 T-1）
-    Client = get_client('wonderwz27018_rw')
-    df_dates2 = pd.DataFrame(Client.economic.trade_dates.find(
-        {'trade_date': {'$gte': "2026-03-17", '$lte': "2026-03-17"}},
-        {'_id': 0})).sort_values('trade_date').trade_date.to_list()
-    logger.warning(f'数据下载区间: {df_dates2[0]} ~ {df_dates2[-1]}')
 
-    for input_date in df_dates2:
-        df = get_ra_base_info(input_date)
-    print(f"\n=== {input_date} 的RQData基础信息获取完成 ===")
+def fetch_trade_dates_in_range(
+    client,
+    start: str,
+    end: str,
+) -> list[str]:
+    """从 economic.trade_dates 取 [start, end] 内全部交易日（含端点）。"""
+    start_s, end_s = parse_start_end_range(start, end)
+    rows = list(
+        client.economic.trade_dates.find(
+            {"trade_date": {"$gte": start_s, "$lte": end_s}},
+            {"_id": 0},
+        )
+    )
+    if not rows:
+        raise ValueError(f"economic.trade_dates 在 {start_s} ~ {end_s} 无记录")
+    df_dates = (
+        pd.DataFrame(rows)
+        .sort_values("trade_date")["trade_date"]
+        .astype(str)
+        .tolist()
+    )
+    return df_dates
+
+
+def main(
+    *,
+    start: str,
+    end: str,
+    mongo_alias: str = "wonderwz27018_rw",
+) -> None:
+    _init_rq()
+    client = get_client(mongo_alias)
+    trade_dates = fetch_trade_dates_in_range(client, start, end)
+    logger.warning("数据下载区间: %s ~ %s，共 %d 个交易日", trade_dates[0], trade_dates[-1], len(trade_dates))
+
+    for input_date in trade_dates:
+        get_ra_base_info(input_date)
+
+    print(f"\n=== 区间 {trade_dates[0]} ~ {trade_dates[-1]} 的 RQData 基础信息获取完成 ===")
+
+
+def _cli_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="历史补齐 rq_base_info：按 economic.trade_dates 区间逐日拉取并入库",
+    )
+    p.add_argument(
+        "--start",
+        default="2026-03-16",
+        help="区间起（含）：YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD，默认 2026-03-16",
+    )
+    p.add_argument(
+        "--end",
+        default="2026-03-18",
+        help="区间止（含）：格式同 --start，默认 2026-03-18",
+    )
+    p.add_argument(
+        "--mongo-alias",
+        default="wonderwz27018_rw",
+        help="Mongo 连接别名，默认 wonderwz27018_rw",
+    )
+    return p.parse_args()
+
+
+if __name__ == "__main__":
+    args = _cli_args()
+    main(start=args.start, end=args.end, mongo_alias=args.mongo_alias)

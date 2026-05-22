@@ -13,17 +13,11 @@
 | `run_basic_rq_daily.bat` | **A 链路**总控：`rq_base_info` → `rq_basic_financial` → `rq_base_index` |
 | `updatebench_quarterly_yearly.bat` | **B 链路**总控：`rq_bench` → `rq_quarterly` → `rq_yearly` |
 | `sync_from_repo.bat` | **仅维护者**：从 `UpdataDaily` 根 +（可选）`v3_1` 工程同步副本 |
-| `update_rqbaseInfo.py` | A：更新 `rq_base_info` |
-| `update_rq_basic_financail.py` | A：更新 `rq_basic_financial` |
-| `update_rq_in_index.py` | A：每日 `rq_base_index`（单日） |
-| `get_rq_in_index.py` | A：被上一脚本引用；也可改区间做**回填** |
-| `trade_dates_all.csv` | A / SWL2：判断交易日（与上述 `.py` **同目录**） |
-| `trade_date_utils.py` | T-1 交易日推导（日更脚本共用） |
+| `rq_daily_update/` | **日更**：`update_rqbaseInfo` 等 5 个脚本（见子目录 README） |
+| `rq_history_backfill/` | **历史补齐**：`load_*` / `get_*` 5 个脚本（见子目录 README） |
+| `rq_paths.py` | 子目录脚本 import 上级 `mongo_connect` / `usedbdef` 用 |
+| `trade_date_utils.py` | T-1 / 是否交易日（读 Mongo `economic.trade_dates`） |
 | `run_swl2_daily.bat` | **SWL2**：`rq_daily_indusSWL2` + `rq_daily_indusSWL2_price` |
-| `update_rq_SWL2.py` | SWL2：申万二级行业成分 |
-| `update_rq_SWL2_price.py` | SWL2：行业成分 + 行业指数日 K 价量 |
-| `get_SWL2_2DB_price_Main.py` | SWL2：价量拉取逻辑（被 `update_rq_SWL2_price` 引用） |
-| `get_SWL2_2DB_Main.py` | SWL2：区间/全量入库（按需改日期后手动跑） |
 | `mongo_connect.py` | Mongo 连接配置（`local` / `wonderwz27018_*` 等别名） |
 | `usedbdef.py` | SWL2：`insert_db_from_df` / `get_client`（与 `update_rqbaseInfo` 并存，勿删） |
 | `bench_quarterly_yearly\` | B：迷你工程根（见下文），**勿改其内部相对层级** |
@@ -36,44 +30,44 @@
 
 | 集合 | 作用 | 入口 |
 |------|------|------|
-| `rq_base_info` | 基础信息、`code_rq` 等 | A：`update_rqbaseInfo.py` |
-| `rq_basic_financial` | 市值与部分财务 TTM | A：`update_rq_basic_financail.py` |
-| `rq_base_index` | 宽基成分 0/1 | A：`update_rq_in_index.py`；区间：`get_rq_in_index.py` |
-| `rq_daily_indusSWL2` | 申万二级行业成分 | SWL2：`update_rq_SWL2.py`（`run_swl2_daily.bat`） |
-| `rq_daily_indusSWL2_price` | 申万二级成分 + 行业指数日 K | SWL2：`update_rq_SWL2_price.py` |
+| `rq_base_info` | 基础信息、`code_rq` 等 | A：`rq_daily_update/update_rqbaseInfo.py` |
+| `rq_basic_financial` | 市值与部分财务 TTM | A：`rq_daily_update/update_rq_basic_financail.py` |
+| `rq_base_index` | 宽基成分 0/1 | 日更：`rq_daily_update/update_rq_in_index.py`；区间：`rq_history_backfill/get_rq_in_index.py` |
+| `rq_daily_indusSWL2` | 申万二级行业成分 | SWL2：`rq_daily_update/update_rq_SWL2.py`（`run_swl2_daily.bat`） |
+| `rq_daily_indusSWL2_price` | 申万二级成分 + 行业指数日 K | SWL2：`rq_daily_update/update_rq_SWL2_price.py` |
 | `rq_bench` | 基准指数行情（对标 Wind bench） | B：`updatebench_quarterly_yearly.bat` 第 1 步 |
 | `rq_quarterly` | 季报 PIT + 按 universe 前向补齐 | B：第 2 步 |
 | `rq_yearly` | 年报 PIT + 按 universe 前向补齐 | B：第 3 步 |
 
 ---
 
-## 三、A 链路：扁平脚本（顺序不可颠倒）
+## 三、A 链路：`rq_daily_update/`（顺序不可颠倒）
 
-1. `update_rqbaseInfo.py` → `rq_base_info`  
-2. `update_rq_basic_financail.py` → `rq_basic_financial`（依赖**同一交易日**步骤 1 已入库）  
-3. `update_rq_in_index.py` → `rq_base_index`（依赖**同一交易日** `rq_base_info`）
+1. `rq_daily_update/update_rqbaseInfo.py` → `rq_base_info`  
+2. `rq_daily_update/update_rq_basic_financail.py` → `rq_basic_financial`（依赖**同一交易日**步骤 1 已入库）  
+3. `rq_daily_update/update_rq_in_index.py` → `rq_base_index`（依赖**同一交易日** `rq_base_info`）
 
 一键：本目录下 **`run_basic_rq_daily.bat`**（改好其中 `PYTHON=`；计划任务请注释 `pause`）。
 
 ### 日更默认交易日：T-1（上一交易日）
 
-下列脚本在**未传 `--date`** 时，均通过 `trade_date_utils.previous_trade_date` 取 **严格早于今天** 的最近交易日落库（米筐当日数据通常晚间才稳定，故不用「今天」）：
+下列脚本在**未传 `--date`** 时，均通过 `trade_date_utils.previous_trade_date` 从 **`economic.trade_dates`** 取 **严格早于今天** 的最近交易日落库（米筐当日数据通常晚间才稳定，故不用「今天」）：
 
 | 脚本 | 集合 |
 |------|------|
-| `update_rqbaseInfo.py` | `rq_base_info` |
-| `update_rq_basic_financail.py` | `rq_basic_financial` |
-| `update_rq_in_index.py` | `rq_base_index` |
-| `update_rq_SWL2.py` | `rq_daily_indusSWL2` |
-| `update_rq_SWL2_price.py` | `rq_daily_indusSWL2_price` |
+| `rq_daily_update/update_rqbaseInfo.py` | `rq_base_info` |
+| `rq_daily_update/update_rq_basic_financail.py` | `rq_basic_financial` |
+| `rq_daily_update/update_rq_in_index.py` | `rq_base_index` |
+| `rq_daily_update/update_rq_SWL2.py` | `rq_daily_indusSWL2` |
+| `rq_daily_update/update_rq_SWL2_price.py` | `rq_daily_indusSWL2_price` |
 
-补跑指定日：`python update_rqbaseInfo.py --date 20260515`（亦支持 `2026/05/15`、`2026-05-15`）。建议计划任务安排在 **20:00 之后**，与 T-1 策略一致。
+补跑指定日：`python rq_daily_update/update_rqbaseInfo.py --date 20260515`（亦支持 `2026/05/15`、`2026-05-15`）。建议计划任务安排在 **20:00 之后**，与 T-1 策略一致。
 
-### 申万二级 SWL2（同目录 · `run_swl2_daily.bat`）
+### 申万二级 SWL2（`rq_daily_update/` · `run_swl2_daily.bat`）
 
 - **`run_swl2_daily.bat`**：依次 `update_rq_SWL2.py` → `rq_daily_indusSWL2`，`update_rq_SWL2_price.py` → `rq_daily_indusSWL2_price`。  
-- 依赖 **`get_SWL2_2DB_price_Main.py`、`usedbdef.py`**；历史/区间全量可选 **`get_SWL2_2DB_Main.py`**（改源码内参数后单独执行）。  
-- 与 A 无硬依赖，建议 **在 A 之后**执行，便于与 `basic_rq` 同一日维护节奏；`trade_dates_all.csv` 与 A 共用。
+- 价量逻辑引用 **`rq_history_backfill/get_SWL2_2DB_price_Main.py`**；历史/区间全量见 **`rq_history_backfill/get_SWL2_2DB_Main.py`**。  
+- 与 A 无硬依赖，建议 **在 A 之后**执行；交易日判断与 A 相同（`economic.trade_dates`）。
 
 ---
 
@@ -160,24 +154,24 @@ pip install -r requirements-basic_rq_daily.txt
 
 | 顺序 | 脚本 | 目标集合 | 改什么 |
 |------|------|----------|--------|
-| 1 | `load_rqbaseInfofastmain.py` | `rq_base_info` | `__main__` 里 `Client.economic.trade_dates` 查询区间，或循环 `input_date` |
-| 2 | `load_rq_basic_financialmain.py` | `rq_basic_financial` | `START_DATE` / `END_DATE`（或 `SINGLE_DAY`） |
-| 3 | `get_SWL2_2DB_Main.py` | `rq_daily_indusSWL2` | `date_range` 的 `$gte` / `$lte` |
-| 4 | `get_SWL2_2DB_price_Main.py` | `rq_daily_indusSWL2_price` | 同上（建议在步骤 3 之后，含行业指数价量） |
-| 5 | `get_rq_in_index.py` | `rq_base_index` | `RANGE_START` / `RANGE_END`（须对应区间已在 `rq_base_info`） |
+| 1 | `rq_history_backfill/load_rqbaseInfofastmain.py` | `rq_base_info` | `--start` / `--end` |
+| 2 | `rq_history_backfill/load_rq_basic_financialmain.py` | `rq_basic_financial` | `--start` / `--end`；单日 `--date` |
+| 3 | `rq_history_backfill/get_SWL2_2DB_Main.py` | `rq_daily_indusSWL2` | `--start` / `--end` |
+| 4 | `rq_history_backfill/get_SWL2_2DB_price_Main.py` | `rq_daily_indusSWL2_price` | `--start` / `--end`（建议步骤 3 之后） |
+| 5 | `rq_history_backfill/get_rq_in_index.py` | `rq_base_index` | `--start` / `--end`（须对应区间已在 `rq_base_info`） |
 
 示例：
 
 ```bat
 cd /d 本目录
-python load_rqbaseInfofastmain.py
-python load_rq_basic_financialmain.py
-python get_SWL2_2DB_Main.py
-python get_SWL2_2DB_price_Main.py
-python get_rq_in_index.py
+python rq_history_backfill/load_rqbaseInfofastmain.py --start 2026-03-16 --end 2026-03-18
+python rq_history_backfill/load_rq_basic_financialmain.py --start 2026-03-16 --end 2026-03-18
+python rq_history_backfill/get_SWL2_2DB_Main.py --start 2026-03-16 --end 2026-03-18
+python rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2026-03-16 --end 2026-03-18
+python rq_history_backfill/get_rq_in_index.py --start 2026-03-16 --end 2026-03-18
 ```
 
-区间指数成分亦可只改 **`get_rq_in_index.py`** 后单独执行（见上表第 5 行）。
+区间指数成分亦可只改 **`rq_history_backfill/get_rq_in_index.py`** 后单独执行（见上表第 5 行）。
 
 ---
 
@@ -192,7 +186,7 @@ python get_rq_in_index.py
 
 ## 九、维护者同步
 
-- **`UpdataDaily` 根**：A 链路脚本 + SWL2 五文件（`sync_from_repo.bat` 第 1 段）+ `trade_dates_all.csv`。  
+- **`UpdataDaily` 根**：`rq_daily_update/`、`rq_history_backfill/`、`rq_paths.py`（`sync_from_repo.bat` 第 1 段）。  
 - **`bench_quarterly_yearly`**：由同脚本第 2 段从 **`V3=D:\EthanPython\v3_1_M_18_MainRunWuZhi1`** 覆盖；若本机 v3 路径不同，请编辑再执行。
 
 ---
@@ -204,7 +198,7 @@ python get_rq_in_index.py
 | `无法根据 run-date 解析 pre_trade_day` | `economic.trade_dates` 缺失或与 `run-date` 范围不匹配。 |
 | `rq_base_info 中无数据` | 未先跑 A 链路。 |
 | `不是交易日，跳过` | A 中财务脚本正常行为。 |
-| 找不到 `trade_dates_all.csv` | 须与 A 脚本同目录。 |
+| T-1 / 是否交易日报错 | 检查 Mongo `economic.trade_dates` 及 `--mongo-alias`（可用环境变量 `MONGO_TRADE_ALIAS`）。 |
 | `ModuleNotFoundError: dateutil` | `pip install python-dateutil` 或重装 requirements。 |
 
 ---

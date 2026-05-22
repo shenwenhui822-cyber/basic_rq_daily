@@ -13,8 +13,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date
 from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__, backfill=True)
+from datetime import date
 from time import perf_counter
 
 import rqdatac as rq
@@ -118,9 +126,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.trade_date:
             td = _norm_input_date(args.trade_date)
         else:
-            csv_path = Path(__file__).resolve().parent / "trade_dates_all.csv"
-            td = previous_trade_date(csv_path, fmt="%Y-%m-%d")
-            _log(f"未指定 --date，使用 T-1 交易日：{td}")
+            td = previous_trade_date(
+                mongo_alias=args.client_from,
+                fmt="%Y-%m-%d",
+            )
+            _log(f"未指定 --date，使用 T-1 交易日（economic.trade_dates）：{td}")
 
         n = update_rq_base_index_one_day(
             td,

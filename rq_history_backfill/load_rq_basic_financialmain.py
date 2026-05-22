@@ -14,6 +14,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__)
 import time
 from datetime import date
 from typing import Iterable
@@ -22,6 +31,7 @@ import numpy as np
 import pandas as pd
 import rqdatac as rq
 
+from trade_date_utils import parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
 DATE_FMT_DB = "%Y/%m/%d"
@@ -36,12 +46,20 @@ FACTOR_MAP = {
 }
 
 
-try:
-    rq.init("18616633529", "wuzhi2020")
-    print("RQData 连接成功")
-except Exception as exc:
-    print(f"RQData 连接失败：{exc}")
-    raise
+_RQ_INITIALIZED = False
+
+
+def _init_rq() -> None:
+    global _RQ_INITIALIZED
+    if _RQ_INITIALIZED:
+        return
+    try:
+        rq.init("18616633529", "wuzhi2020")
+        print("RQData 连接成功")
+        _RQ_INITIALIZED = True
+    except Exception as exc:
+        print(f"RQData 连接失败：{exc}")
+        raise
 
 
 def _parse_input_date(s: str) -> date:
@@ -265,21 +283,14 @@ def main(
     split_by_year: bool = True,
     mongo_db: str = "basic_rq",
     mongo_collection: str = "rq_basic_financial",
+    no_mongo: bool = False,
+    mongo_alias: str = "wonderwz27018_rw",
 ) -> None:
-    parser = argparse.ArgumentParser(description="按交易日拉取全市场基本财务字段并可选落库 Mongo")
-    parser.add_argument("--no-mongo", action="store_true", help="仅拉取，不写 Mongo")
-    parser.add_argument("--mongo-alias", default="wonderwz27018_rw", help="get_client 别名，默认 wonderwz27018_rw")
-    parser.add_argument("--no-split-year", action="store_true", help="不按年分段（谨慎使用）")
-    args = parser.parse_args()
-    if args.no_split_year:
-        split_by_year = False
-
+    _init_rq()
     if single_day:
-        start_s = end_s = str(single_day).strip()
+        start_s = end_s = parse_explicit_date_arg(single_day, fmt=DATE_FMT_DB)
     else:
-        start_s, end_s = str(start_date).strip(), str(end_date).strip()
-        if not start_s or not end_s:
-            raise ValueError("请填写 START_DATE / END_DATE，或设置 SINGLE_DAY")
+        start_s, end_s = parse_start_end_range(start_date, end_date, fmt=DATE_FMT_DB)
 
     print(f"总区间: {start_s} ~ {end_s}（含）")
     log_rq_quota_status("任务启动时")
@@ -288,8 +299,8 @@ def main(
         run_pipeline_for_range(
             start_s,
             end_s,
-            no_mongo=args.no_mongo,
-            mongo_alias=args.mongo_alias,
+            no_mongo=no_mongo,
+            mongo_alias=mongo_alias,
             mongo_db=mongo_db,
             mongo_collection=mongo_collection,
             segment_label="单日",
@@ -300,8 +311,8 @@ def main(
         run_pipeline_for_range(
             start_s,
             end_s,
-            no_mongo=args.no_mongo,
-            mongo_alias=args.mongo_alias,
+            no_mongo=no_mongo,
+            mongo_alias=mongo_alias,
             mongo_db=mongo_db,
             mongo_collection=mongo_collection,
             segment_label="整段（未按年拆分）",
@@ -314,8 +325,8 @@ def main(
         run_pipeline_for_range(
             seg_start,
             seg_end,
-            no_mongo=args.no_mongo,
-            mongo_alias=args.mongo_alias,
+            no_mongo=no_mongo,
+            mongo_alias=mongo_alias,
             mongo_db=mongo_db,
             mongo_collection=mongo_collection,
             segment_label=f"{year} 年",
@@ -325,21 +336,38 @@ def main(
     log_rq_quota_status("全部任务结束后")
 
 
+def _cli_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="历史补齐 rq_basic_financial：按交易日区间拉取并落库",
+    )
+    p.add_argument(
+        "--start",
+        default="2026-05-12",
+        help="区间起（含）：YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD",
+    )
+    p.add_argument("--end", default="2026-05-12", help="区间止（含），格式同 --start")
+    p.add_argument(
+        "--date",
+        default=None,
+        help="单日（含）；指定后忽略 --start / --end",
+    )
+    p.add_argument("--no-mongo", action="store_true", help="仅拉取，不写 Mongo")
+    p.add_argument(
+        "--mongo-alias",
+        default="wonderwz27018_rw",
+        help="get_client 别名，默认 wonderwz27018_rw",
+    )
+    p.add_argument("--no-split-year", action="store_true", help="不按年分段（谨慎使用）")
+    return p.parse_args()
+
+
 if __name__ == "__main__":
-    # 一次性历史补齐：修改区间（日更请用 update_rq_basic_financail.py，默认 T-1）
-    START_DATE = "2026-05-12"
-    END_DATE = "2026-05-12"
-    SINGLE_DAY = None
-    SPLIT_BY_YEAR = True
-
-    MONGO_DB = "basic_rq"
-    MONGO_COLLECTION = "rq_basic_financial"
-
+    args = _cli_args()
     main(
-        start_date=START_DATE,
-        end_date=END_DATE,
-        single_day=SINGLE_DAY,
-        split_by_year=SPLIT_BY_YEAR,
-        mongo_db=MONGO_DB,
-        mongo_collection=MONGO_COLLECTION,
+        start_date=args.start,
+        end_date=args.end,
+        single_day=args.date,
+        split_by_year=not args.no_split_year,
+        no_mongo=args.no_mongo,
+        mongo_alias=args.mongo_alias,
     )

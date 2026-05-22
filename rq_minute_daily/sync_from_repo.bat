@@ -8,7 +8,7 @@ copy /Y "%ROOT%\rq_getRangeDailyPrice.py" "%~dp0"
 copy /Y "%ROOT%\get_Min1Test1.py" "%~dp0"
 copy /Y "%ROOT%\get_dayDataTest1.py" "%~dp0"
 copy /Y "%ROOT%\usedbdef.py" "%~dp0"
-copy /Y "%ROOT%\update_rqbaseInfo.py" "%~dp0"
-copy /Y "%ROOT%\trade_dates_all.csv" "%~dp0"
+copy /Y "%ROOT%\rq_daily_update\update_rqbaseInfo.py" "%~dp0"
+copy /Y "%ROOT%\trade_date_utils.py" "%~dp0"
 echo 完成。
 pause

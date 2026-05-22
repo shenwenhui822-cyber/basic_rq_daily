@@ -1,26 +1,50 @@
-import rqdatac as rq
+import sys
+from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__)
+
+import argparse
+
 import pandas as pd
+import rqdatac as rq
+
+from trade_date_utils import mongo_trade_date_range
 from usedbdef import get_client, insert_db_from_df
+
+_RQ_INITIALIZED = False
+
+
+def _init_rq() -> None:
+    global _RQ_INITIALIZED
+    if _RQ_INITIALIZED:
+        return
+    try:
+        rq.init("18616633529", "wuzhi2020")
+        print("RQData 连接成功")
+        _RQ_INITIALIZED = True
+    except Exception as e:
+        print(f"RQData 连接失败: {e}")
+        raise
 
 
 def main(
     date_range,
-    mongo_client_name='wonderwz27018_rw',
-    save_db_name='basic_rq',
-    save_table_name='rq_daily_indusSWL2'
+    mongo_client_name="wonderwz27018_rw",
+    save_db_name="basic_rq",
+    save_table_name="rq_daily_indusSWL2",
 ):
     """
     主函数：获取申万二级行业成分股并保存到数据库
-    
+
     :param date_range: 日期范围字典，格式如 {'$gte': "2026-01-01", '$lte': "2026-02-13"}
     """
-    # 初始化rqdatac连接
-    try:
-        rq.init('18616633529', 'wuzhi2020')
-        print("✅ RQData连接成功")
-    except Exception as e:
-        print(f"❌ RQData连接失败: {e}")
-        raise
+    _init_rq()
     
     # 连接数据库（落库位置通过参数传入，便于在 __main__ 统一配置）
     Client = get_client(mongo_client_name)
@@ -212,17 +236,29 @@ def main(
     print(f"失败 {total_count - success_count} 个交易日")
 
 
-if __name__ == '__main__':
-    # 一次性历史补齐：修改 date_range（日更请用 update_rq_SWL2.py，默认 T-1）
-    date_range = {'$gte': "2025-12-01", '$lte': "2026-04-10"}
-    # 定义落库位置
-    mongo_client_name = 'wonderwz27018_rw'
-    save_db_name = 'basic_rq'
-    save_table_name = 'rq_daily_indusSWL2'
-    # 调用主函数
+def _cli_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="历史补齐 rq_daily_indusSWL2：按 economic.trade_dates 区间逐日拉取申万二级成分",
+    )
+    p.add_argument(
+        "--start",
+        default="2025-12-01",
+        help="区间起（含）：YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD",
+    )
+    p.add_argument("--end", default="2026-04-10", help="区间止（含），格式同 --start")
+    p.add_argument(
+        "--mongo-alias",
+        default="wonderwz27018_rw",
+        help="Mongo 连接别名",
+    )
+    return p.parse_args()
+
+
+if __name__ == "__main__":
+    args = _cli_args()
     main(
-        date_range=date_range,
-        mongo_client_name=mongo_client_name,
-        save_db_name=save_db_name,
-        save_table_name=save_table_name
+        date_range=mongo_trade_date_range(args.start, args.end),
+        mongo_client_name=args.mongo_alias,
+        save_db_name="basic_rq",
+        save_table_name="rq_daily_indusSWL2",
     )

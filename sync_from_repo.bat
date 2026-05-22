@@ -2,7 +2,7 @@
 chcp 65001 >nul
 REM =============================================================================
 REM 维护用：同步本分包
-REM  (1) UpdataDaily 根：A 链路 + SWL2 + csv
+REM  (1) UpdataDaily 根：A 链路 + SWL2
 REM  (2) v3_1 工程：bench / quarterly / yearly 迷你工程（若路径不同请改 V3）
 REM =============================================================================
 
@@ -12,16 +12,22 @@ set "MINI=%~dp0bench_quarterly_yearly"
 
 echo --- [1/3] 从 UpdataDaily 根目录复制 ---
 echo 源：%ROOT%
-copy /Y "%ROOT%\update_rqbaseInfo.py" "%~dp0"
-copy /Y "%ROOT%\update_rq_basic_financail.py" "%~dp0"
-copy /Y "%ROOT%\update_rq_in_index.py" "%~dp0"
-copy /Y "%ROOT%\get_rq_in_index.py" "%~dp0"
-copy /Y "%ROOT%\update_rq_SWL2.py" "%~dp0"
-copy /Y "%ROOT%\update_rq_SWL2_price.py" "%~dp0"
-copy /Y "%ROOT%\get_SWL2_2DB_price_Main.py" "%~dp0"
-copy /Y "%ROOT%\get_SWL2_2DB_Main.py" "%~dp0"
+if not exist "%~dp0rq_daily_update" mkdir "%~dp0rq_daily_update"
+if not exist "%~dp0rq_history_backfill" mkdir "%~dp0rq_history_backfill"
+copy /Y "%ROOT%\rq_paths.py" "%~dp0"
+copy /Y "%ROOT%\rq_daily_update\update_rqbaseInfo.py" "%~dp0rq_daily_update\"
+copy /Y "%ROOT%\rq_daily_update\update_rq_basic_financail.py" "%~dp0rq_daily_update\"
+copy /Y "%ROOT%\rq_daily_update\update_rq_in_index.py" "%~dp0rq_daily_update\"
+copy /Y "%ROOT%\rq_daily_update\update_rq_SWL2.py" "%~dp0rq_daily_update\"
+copy /Y "%ROOT%\rq_daily_update\update_rq_SWL2_price.py" "%~dp0rq_daily_update\"
+copy /Y "%ROOT%\rq_history_backfill\get_rq_in_index.py" "%~dp0rq_history_backfill\"
+copy /Y "%ROOT%\rq_history_backfill\get_SWL2_2DB_price_Main.py" "%~dp0rq_history_backfill\"
+copy /Y "%ROOT%\rq_history_backfill\get_SWL2_2DB_Main.py" "%~dp0rq_history_backfill\"
+copy /Y "%ROOT%\rq_history_backfill\load_rqbaseInfofastmain.py" "%~dp0rq_history_backfill\"
+copy /Y "%ROOT%\rq_history_backfill\load_rq_basic_financialmain.py" "%~dp0rq_history_backfill\"
 copy /Y "%ROOT%\usedbdef.py" "%~dp0"
-copy /Y "%ROOT%\trade_dates_all.csv" "%~dp0"
+copy /Y "%ROOT%\mongo_connect.py" "%~dp0"
+copy /Y "%ROOT%\trade_date_utils.py" "%~dp0"
 
 echo.
 echo --- [2/3] 从 v3_1 复制 bench_quarterly_yearly 子树 ---

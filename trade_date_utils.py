@@ -1,46 +1,68 @@
 # -*- coding: utf-8 -*-
 """
-交易日工具：基于与本目录脚本同级的 ``trade_dates_all.csv``。
+交易日工具：从 MongoDB ``economic.trade_dates`` 读取。
 
-日更脚本默认取 **T-1**（严格早于「今天」的最近一个交易日），避免当日米筐数据晚间才稳定。
+日更脚本默认取 **T-1**（严格早于「今天」的最近一个交易日）。
+默认连接别名 ``local``（见 ``mongo_connect.py``）；可用环境变量 ``MONGO_TRADE_ALIAS`` 覆盖。
 """
 from __future__ import annotations
 
+import os
 from datetime import date
-from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
-_DEFAULT_CSV = Path(__file__).resolve().parent / "trade_dates_all.csv"
+_DEFAULT_MONGO_ALIAS = os.environ.get("MONGO_TRADE_ALIAS", "local")
 
 
-def _load_trade_dates(trade_dates_path: str | Path) -> pd.Series:
-    path = Path(trade_dates_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"找不到交易日文件: {path}")
-    df = pd.read_csv(path)
-    if "trade_date" not in df.columns:
-        raise ValueError(f"{path} 须含 trade_date 列")
-    return pd.to_datetime(df["trade_date"], errors="coerce").dropna()
+def norm_trade_date_str(s: str) -> str:
+    """统一为 YYYY-MM-DD。"""
+    return pd.Timestamp(str(s).strip().replace("/", "-")).strftime("%Y-%m-%d")
+
+
+def _get_client(mongo_alias: str, client: Any | None):
+    if client is not None:
+        return client
+    from mongo_connect import get_client
+
+    return get_client(mongo_alias)
+
+
+def is_trade_day(
+    day: str,
+    *,
+    mongo_alias: str = _DEFAULT_MONGO_ALIAS,
+    client: Any | None = None,
+) -> bool:
+    """判断 ``day`` 是否在 ``economic.trade_dates`` 中。"""
+    d = norm_trade_date_str(day)
+    c = _get_client(mongo_alias, client)
+    col = c.economic.trade_dates
+    for variant in (d, d.replace("-", "/")):
+        if col.find_one({"trade_date": variant}, {"_id": 1}):
+            return True
+    return False
 
 
 def previous_trade_date(
-    trade_dates_path: str | Path | None = None,
     *,
+    mongo_alias: str = _DEFAULT_MONGO_ALIAS,
+    client: Any | None = None,
     fmt: str = "%Y-%m-%d",
     as_of: date | None = None,
 ) -> str:
-    """
-    返回严格早于 ``as_of``（默认今天）的最近交易日字符串。
-
-    :param fmt: 输出格式，常用 ``%Y-%m-%d`` 或 ``%Y/%m/%d``
-    """
-    ref = as_of or date.today()
-    s = _load_trade_dates(trade_dates_path or _DEFAULT_CSV)
-    past = s[s.dt.date < ref]
-    if past.empty:
-        raise ValueError(f"trade_dates 中无早于 {ref} 的交易日")
-    return pd.Timestamp(past.max()).strftime(fmt)
+    """返回严格早于 ``as_of``（默认今天）的最近交易日字符串。"""
+    ref = norm_trade_date_str((as_of or date.today()).isoformat())
+    c = _get_client(mongo_alias, client)
+    doc = c.economic.trade_dates.find_one(
+        {"trade_date": {"$lt": ref}},
+        {"_id": 0, "trade_date": 1},
+        sort=[("trade_date", -1)],
+    )
+    if not doc:
+        raise ValueError(f"economic.trade_dates 中无早于 {ref} 的交易日")
+    return pd.Timestamp(str(doc["trade_date"]).replace("/", "-")).strftime(fmt)
 
 
 def parse_explicit_date_arg(arg: str, *, fmt: str = "%Y-%m-%d") -> str:
@@ -51,3 +73,18 @@ def parse_explicit_date_arg(arg: str, *, fmt: str = "%Y-%m-%d") -> str:
     else:
         ts = pd.Timestamp(raw.replace("/", "-"))
     return ts.strftime(fmt)
+
+
+def parse_start_end_range(start: str, end: str, *, fmt: str = "%Y-%m-%d") -> tuple[str, str]:
+    """解析 ``--start`` / ``--end`` 并校验起止顺序。"""
+    start_s = parse_explicit_date_arg(start, fmt=fmt)
+    end_s = parse_explicit_date_arg(end, fmt=fmt)
+    if start_s > end_s:
+        raise ValueError(f"起始日 {start_s} 不能晚于结束日 {end_s}")
+    return start_s, end_s
+
+
+def mongo_trade_date_range(start: str, end: str) -> dict[str, str]:
+    """Mongo ``economic.trade_dates`` 查询用 ``{'$gte': ..., '$lte': ...}``。"""
+    start_s, end_s = parse_start_end_range(start, end)
+    return {"$gte": start_s, "$lte": end_s}

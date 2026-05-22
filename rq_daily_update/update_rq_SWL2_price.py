@@ -10,10 +10,19 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__, backfill=True)
+
 import argparse
 import traceback
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -21,7 +30,7 @@ import rqdatac as rq
 
 from get_SWL2_2DB_price_Main import PRICE_FIELDS, fetch_level2_index_prices
 from usedbdef import get_client, insert_db_from_df
-from trade_date_utils import parse_explicit_date_arg, previous_trade_date
+from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 
 try:
     rq.init("18616633529", "wuzhi2020")
@@ -29,13 +38,6 @@ try:
 except Exception as e:
     print(f"❌ RQData 连接失败：{e}")
     raise
-
-
-def _is_trade_day(today_str: str, trade_dates_path: str) -> bool:
-    df = pd.read_csv(trade_dates_path)
-    df["trade_date"] = pd.to_datetime(df["trade_date"])
-    today_date = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d").date()
-    return today_date in df["trade_date"].dt.date.values
 
 
 def _build_swl2_price_for_day(today_str: str, batch_size: int = 10) -> pd.DataFrame:
@@ -170,7 +172,6 @@ def _build_swl2_price_for_day(today_str: str, batch_size: int = 10) -> pd.DataFr
 
 def update_rq_SWL2_price(
     today_str: str,
-    trade_dates_path: str,
     *,
     mongo_alias: str = "wonderwz27018_rw",
     mongo_db: str = "basic_rq",
@@ -181,7 +182,8 @@ def update_rq_SWL2_price(
     """
     print(f"\n=== 开始更新 {mongo_collection}（价量表），日期：{today_str} ===")
 
-    if not _is_trade_day(today_str, trade_dates_path):
+    client = get_client(mongo_alias)
+    if not is_trade_day(today_str, client=client):
         print(f"❌ {today_str} 不是交易日，跳过更新")
         return False
     print(f"✅ {today_str} 是交易日")
@@ -197,7 +199,6 @@ def update_rq_SWL2_price(
         print("❌ 当天申万二级价量数据为空，更新失败")
         return False
 
-    client = get_client(mongo_alias)
     table: Any = client[mongo_db][mongo_collection]
 
     day_dash = pd.Timestamp(today_str).strftime("%Y-%m-%d")
@@ -210,29 +211,24 @@ def update_rq_SWL2_price(
     return True
 
 
-def _cli_target_date_str(trade_dates_path: str) -> str:
-    """--date 显式指定；省略则为 T-1（上一交易日）。"""
+def _cli_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="更新 rq_daily_indusSWL2_price")
-    p.add_argument(
-        "--date",
-        "-d",
-        default=None,
-        help="目标交易日；默认 T-1（上一交易日）",
-    )
-    args = p.parse_args()
-    if not args.date:
-        return previous_trade_date(trade_dates_path, fmt="%Y/%m/%d")
-    return parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+    p.add_argument("--date", "-d", default=None, help="目标交易日；默认 T-1")
+    p.add_argument("--mongo-alias", default="wonderwz27018_rw")
+    return p.parse_args()
 
 
 if __name__ == "__main__":
-    TRADE_DATES_PATH = str(Path(__file__).resolve().parent / "trade_dates_all.csv")
-    TODAY_STR = _cli_target_date_str(TRADE_DATES_PATH)
+    args = _cli_args()
+    today_str = (
+        parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+        if args.date
+        else previous_trade_date(mongo_alias=args.mongo_alias, fmt="%Y/%m/%d")
+    )
 
     ok = update_rq_SWL2_price(
-        today_str=TODAY_STR,
-        trade_dates_path=TRADE_DATES_PATH,
-        mongo_alias="wonderwz27018_rw",
+        today_str=today_str,
+        mongo_alias=args.mongo_alias,
         mongo_db="basic_rq",
         mongo_collection="rq_daily_indusSWL2_price",
     )

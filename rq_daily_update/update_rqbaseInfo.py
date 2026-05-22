@@ -4,6 +4,17 @@
 # Illustration:
 # 1. 每日更新 rq_base_info（默认 T-1，见 trade_date_utils）
 # =============================================================================
+import sys
+from pathlib import Path
+
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from rq_paths import bootstrap
+
+bootstrap(__file__)
+
 import rqdatac as rq
 import pandas as pd
 import pymongo
@@ -16,11 +27,10 @@ import time
 import traceback
 import argparse
 from datetime import datetime, timedelta
-from pathlib import Path
 from loguru import logger
 
 from usedbdef import get_client, insert_db_from_df
-from trade_date_utils import parse_explicit_date_arg, previous_trade_date
+from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 
 # 初始化 RQData 连接
 try:
@@ -281,27 +291,22 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
     return df_results
 
 
-def update_rqbaseInfo(today_str: str, trade_dates_path: str) -> bool:
+def update_rqbaseInfo(
+    today_str: str,
+    *,
+    mongo_alias: str = "wonderwz27018_rw",
+) -> bool:
     """
     每日更新 rq_base_info 数据
     根据传入的 today_str 日期，判断是否是交易日，如果是则获取该日期的 RQData 基础信息并入库
 
     :param today_str: 日期字符串，格式如 "2026/02/10"
-    :param trade_dates_path: trade_dates_all.csv 文件路径
     :return: 更新成功返回 True，失败返回 False
     """
     print(f"\n=== 开始更新 rq_base_info，日期：{today_str} ===")
 
     try:
-        # 读取本地 trade_dates_all.csv 文件判断是否交易日
-        df = pd.read_csv(trade_dates_path)
-        df['trade_date'] = pd.to_datetime(df['trade_date'])
-        
-        # 将 today_str 转换为 date 对象进行判断（与 Updatedemo.py 保持一致）
-        today_date = datetime.strptime(today_str.replace('/', '-'), '%Y-%m-%d').date()
-        is_trade_day = today_date in df['trade_date'].dt.date.values
-
-        if not is_trade_day:
+        if not is_trade_day(today_str, mongo_alias=mongo_alias):
             logger.info(f"{today_str} 不是交易日，跳过更新")
             print(f"❌ {today_str} 不是交易日，跳过更新")
             return False
@@ -323,8 +328,7 @@ def update_rqbaseInfo(today_str: str, trade_dates_path: str) -> bool:
         return False
 
 
-def _cli_target_date_str(trade_dates_path: str) -> str:
-    """命令行 --date：显式指定；省略则为 T-1（上一交易日）。"""
+def _cli_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="更新 rq_base_info")
     p.add_argument(
         "--date",
@@ -332,18 +336,22 @@ def _cli_target_date_str(trade_dates_path: str) -> str:
         default=None,
         help="目标交易日，如 20260507、2026/05/07；默认 T-1（上一交易日）",
     )
-    args = p.parse_args()
-    if not args.date:
-        return previous_trade_date(trade_dates_path, fmt="%Y/%m/%d")
-    return parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+    p.add_argument(
+        "--mongo-alias",
+        default="wonderwz27018_rw",
+        help="Mongo 别名（读 economic.trade_dates / 写 basic_rq）",
+    )
+    return p.parse_args()
 
 
 if __name__ == '__main__':
-    # 配置参数
-    trade_dates_path = str(Path(__file__).resolve().parent / 'trade_dates_all.csv')
-
-    today_str = _cli_target_date_str(trade_dates_path)
-    result = update_rqbaseInfo(today_str, trade_dates_path)
+    args = _cli_args()
+    today_str = (
+        parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+        if args.date
+        else previous_trade_date(mongo_alias=args.mongo_alias, fmt="%Y/%m/%d")
+    )
+    result = update_rqbaseInfo(today_str, mongo_alias=args.mongo_alias)
 
     if result:
         print(f"\n✅ 数据更新成功")

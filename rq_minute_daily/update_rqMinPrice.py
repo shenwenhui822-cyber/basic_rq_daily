@@ -8,16 +8,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import sys
+import time
 from pathlib import Path
 from typing import Any
-import time
 
 import numpy as np
 import pandas as pd
 import pymongo
 import rqdatac as rq
 
+_PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
+from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 from usedbdef import DEFAULT_MONGO_ALIAS, get_client
 
 
@@ -54,13 +59,6 @@ def _rq_code_to_display(code_rq: str) -> str:
 
 def _df_nan_to_none(df: pd.DataFrame) -> pd.DataFrame:
     return df.replace({np.nan: None})
-
-
-def _is_trade_day(today_str: str, trade_dates_path: str) -> bool:
-    df = pd.read_csv(trade_dates_path)
-    df["trade_date"] = pd.to_datetime(df["trade_date"])
-    today_date = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d").date()
-    return today_date in df["trade_date"].dt.date.values
 
 
 def _load_today_base_info_codes(*, table: Any, today_str: str) -> list[str]:
@@ -222,7 +220,6 @@ def _wait_mongo_ready(
 
 def update_rqMinPrice(
     today_str: str,
-    trade_dates_path: str,
     *,
     mongo_alias: str = DEFAULT_MONGO_ALIAS,
     base_db: str = "basic_rq",
@@ -236,12 +233,11 @@ def update_rqMinPrice(
     """
     print(f"\n=== 开始更新 1 分钟行情，日期：{today_str} ===")
 
-    if not _is_trade_day(today_str, trade_dates_path):
+    client = get_client(mongo_alias)
+    if not is_trade_day(today_str, client=client):
         print(f"❌ {today_str} 不是交易日，跳过更新")
         return False
     print(f"✅ {today_str} 是交易日")
-
-    client = get_client(mongo_alias)
     if not _wait_mongo_ready(client):
         print(f"❌ MongoDB 不可用，请检查 ../mongo_connect.py 中别名 {mongo_alias!r} 及网络后重试")
         return False
@@ -277,13 +273,21 @@ def update_rqMinPrice(
 
 
 if __name__ == "__main__":
-    TRADE_DATES_PATH = str(Path(__file__).resolve().parent / "trade_dates_all.csv")
-    TODAY_STR = datetime.now().strftime("%Y/%m/%d")
+    import argparse
+
+    p = argparse.ArgumentParser(description="更新 rq 分钟行情")
+    p.add_argument("--date", "-d", default=None, help="目标交易日；默认 T-1")
+    p.add_argument("--mongo-alias", default=DEFAULT_MONGO_ALIAS)
+    cli = p.parse_args()
+    today_str = (
+        parse_explicit_date_arg(cli.date, fmt="%Y/%m/%d")
+        if cli.date
+        else previous_trade_date(mongo_alias=cli.mongo_alias, fmt="%Y/%m/%d")
+    )
 
     result = update_rqMinPrice(
-        today_str=TODAY_STR,
-        trade_dates_path=TRADE_DATES_PATH,
-        mongo_alias=DEFAULT_MONGO_ALIAS,
+        today_str=today_str,
+        mongo_alias=cli.mongo_alias,
         base_db="basic_rq",
         base_collection="rq_base_info",
         minute_db="rq_minute",
