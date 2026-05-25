@@ -32,6 +32,8 @@ from loguru import logger
 from usedbdef import get_client, insert_db_from_df
 from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 
+DATE_FMT_DB = "%Y-%m-%d"
+
 # 初始化 RQData 连接
 try:
     rq.init('18616633529', 'wuzhi2020')
@@ -95,16 +97,17 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
     """
     获取指定日期的 RQData 基础信息并入库
 
-    :param input_date: 交易日期，格式如 "2026/02/10"
+    :param input_date: 交易日期，格式如 "2015-09-30"
     :param delete_before_insert: True 时先按 date 删除库内当日旧记录再插入（与 load_rqbaseInfofastmain 一致）
     :return: 处理后的 DataFrame
     """
     print(f"\n=== 开始获取 {input_date} 的 RQData 基础信息 ===")
-    # 落库统一用横杠，与历史 update 脚本一致；删除时用 variants 覆盖斜杠/横杠两种存量
-    date_str = str(input_date).replace("/", "-")
-    date_yyyymmdd = _input_date_to_yyyymmdd(input_date)
+    # 落库统一 YYYY-MM-DD（如 2015-09-30）；删除时用 variants 覆盖斜杠/横杠存量
+    date_str = parse_explicit_date_arg(str(input_date), fmt=DATE_FMT_DB)
+    rq_date = date_str.replace("-", "/")
+    date_yyyymmdd = _input_date_to_yyyymmdd(date_str)
 
-    df_allinstrument = rq.all_instruments(type='CS', date=input_date, market='cn')
+    df_allinstrument = rq.all_instruments(type="CS", date=rq_date, market="cn")
     print(f"共获取到 {len(df_allinstrument)} 只股票")
     print(f"数据结构：{df_allinstrument.columns.tolist()}")
 
@@ -132,8 +135,8 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
         batch_results = []
 
         try:
-            dfsus = rq.is_suspended(batch_codes, start_date=input_date, end_date=input_date, market="cn")
-            st_status = rq.is_st_stock(batch_codes, start_date=input_date, end_date=input_date, market="cn")
+            dfsus = rq.is_suspended(batch_codes, start_date=rq_date, end_date=rq_date, market="cn")
+            st_status = rq.is_st_stock(batch_codes, start_date=rq_date, end_date=rq_date, market="cn")
             inst_map = _instruments_map_for_codes(batch_codes)
 
             for j, stock_code in enumerate(batch_codes):
@@ -192,7 +195,7 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
             traceback.print_exc()
             for stock_code in batch_codes:
                 try:
-                    dfsus = rq.is_suspended(stock_code, start_date=input_date, end_date=input_date, market="cn")
+                    dfsus = rq.is_suspended(stock_code, start_date=rq_date, end_date=rq_date, market="cn")
                     is_suspended = False
                     if hasattr(dfsus, 'values') and dfsus.values.size > 0:
                         is_suspended = dfsus.values[0]
@@ -211,7 +214,7 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
                         code = stock_code
 
                     try:
-                        is_st = rq.is_st_stock(stock_code, start_date=input_date, end_date=input_date, market="cn")
+                        is_st = rq.is_st_stock(stock_code, start_date=rq_date, end_date=rq_date, market="cn")
                         st_flag = False
                         if hasattr(is_st, 'values') and is_st.values.size > 0:
                             st_flag = is_st.values[0]
@@ -276,7 +279,7 @@ def get_ra_base_info(input_date: str, *, delete_before_insert: bool = True) -> p
         print(f"✅ 数据库连接成功，表：{table}")
 
         if delete_before_insert:
-            variants = _mongo_date_variants(input_date)
+            variants = _mongo_date_variants(date_str)
             dr = table.delete_many({"date": {"$in": variants}})
             print(f"已删除当日旧记录: {dr.deleted_count} 条（date in {variants}）")
 
@@ -300,25 +303,26 @@ def update_rqbaseInfo(
     每日更新 rq_base_info 数据
     根据传入的 today_str 日期，判断是否是交易日，如果是则获取该日期的 RQData 基础信息并入库
 
-    :param today_str: 日期字符串，格式如 "2026/02/10"
+    :param today_str: 目标交易日，格式如 "2015-09-30"
     :return: 更新成功返回 True，失败返回 False
     """
-    print(f"\n=== 开始更新 rq_base_info，日期：{today_str} ===")
+    target = parse_explicit_date_arg(today_str, fmt=DATE_FMT_DB)
+    print(f"\n=== 开始更新 rq_base_info，日期：{target} ===")
 
     try:
-        if not is_trade_day(today_str, mongo_alias=mongo_alias):
-            logger.info(f"{today_str} 不是交易日，跳过更新")
-            print(f"❌ {today_str} 不是交易日，跳过更新")
+        if not is_trade_day(target, mongo_alias=mongo_alias):
+            logger.info(f"{target} 不是交易日，跳过更新")
+            print(f"{target} 不是交易日，跳过更新")
             return False
 
-        print(f"✅ {today_str} 是交易日，开始获取 RQData 基础信息...")
-        df_result = get_ra_base_info(today_str)
+        print(f"{target} 是交易日，开始获取 RQData 基础信息...")
+        df_result = get_ra_base_info(target)
 
         if df_result is not None and not df_result.empty:
-            print(f"\n=== {today_str} 的 RQData 基础信息更新完成 ===")
+            print(f"\n=== {target} 的 RQData 基础信息更新完成 ===")
             return True
         else:
-            print(f"\n=== {today_str} 的 RQData 基础信息更新失败：数据为空 ===")
+            print(f"\n=== {target} 的 RQData 基础信息更新失败：数据为空 ===")
             return False
 
     except Exception as e:
@@ -334,7 +338,7 @@ def _cli_args() -> argparse.Namespace:
         "--date",
         "-d",
         default=None,
-        help="目标交易日，如 20260507、2026/05/07；默认 T-1（上一交易日）",
+        help="目标交易日，如 20150930、2015-09-30；默认 T-1（上一交易日）",
     )
     p.add_argument(
         "--mongo-alias",
@@ -347,9 +351,9 @@ def _cli_args() -> argparse.Namespace:
 if __name__ == '__main__':
     args = _cli_args()
     today_str = (
-        parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+        parse_explicit_date_arg(args.date, fmt=DATE_FMT_DB)
         if args.date
-        else previous_trade_date(mongo_alias=args.mongo_alias, fmt="%Y/%m/%d")
+        else previous_trade_date(mongo_alias=args.mongo_alias, fmt=DATE_FMT_DB)
     )
     result = update_rqbaseInfo(today_str, mongo_alias=args.mongo_alias)
 
