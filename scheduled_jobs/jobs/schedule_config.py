@@ -11,7 +11,7 @@ from typing import Any
 
 # (触发时刻, 任务显示名, 参数)
 SCHEDULE_ENTRIES: list[tuple[str, str, dict[str, Any]]] = [
-    ("09:05", "update_rq_basic_financial", {"scheduler_job_key": "rq_basic_financial"}),
+    # ("09:05", "update_rq_basic_financial", {"scheduler_job_key": "rq_basic_financial"}),
     ("09:20", "update_rq_base_info", {"scheduler_job_key": "rq_base_info"}),
     ("09:25", "update_rq_in_index", {"scheduler_job_key": "rq_in_index"}),
     # 示例：后续可继续添加
