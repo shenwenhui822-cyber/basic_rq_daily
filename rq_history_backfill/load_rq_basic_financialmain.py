@@ -31,6 +31,7 @@ import numpy as np
 import pandas as pd
 import rqdatac as rq
 
+from rq_basic_financial_format import prepare_financial_df_for_mongo
 from trade_date_utils import parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
@@ -209,7 +210,7 @@ def fetch_basic_financial_one_day(
 
 
 def _df_nan_to_none(df: pd.DataFrame) -> pd.DataFrame:
-    return df.replace({np.nan: None})
+    return prepare_financial_df_for_mongo(df)
 
 
 def save_day_to_mongo(

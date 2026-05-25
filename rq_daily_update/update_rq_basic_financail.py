@@ -27,6 +27,7 @@ import pandas as pd
 import rqdatac as rq
 
 from usedbdef import get_client
+from rq_basic_financial_format import prepare_financial_df_for_mongo
 from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 
 
@@ -62,7 +63,7 @@ def _rq_code_to_display(code_rq: str) -> str:
 
 
 def _df_nan_to_none(df: pd.DataFrame) -> pd.DataFrame:
-    return df.replace({np.nan: None})
+    return prepare_financial_df_for_mongo(df)
 
 
 def _load_today_base_info_codes(*, table: Any, today_str: str) -> list[str]:
