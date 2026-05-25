@@ -34,7 +34,7 @@ import rqdatac as rq
 from trade_date_utils import parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
-DATE_FMT_DB = "%Y/%m/%d"
+DATE_FMT_DB = "%Y-%m-%d"
 QUOTA_STOP_FRACTION = 0.6
 VERBOSE = False
 

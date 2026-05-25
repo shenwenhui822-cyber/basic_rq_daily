@@ -17,11 +17,12 @@
 将 `2026-03-16`、`2026-03-18` 换成你的起止日：
 
 ```bash
-python rq_history_backfill/load_rqbaseInfofastmain.py --start 20260316 --end 20260318
+python rq_history_backfill/load_rqbaseInfofastmain.py --start 20150105 --end 20150305
+python rq_history_backfill/get_rq_in_index.py --start 2026-03-16 --end 2026-03-18
 python rq_history_backfill/load_rq_basic_financialmain.py --start 2026-03-16 --end 2026-03-18
 python rq_history_backfill/get_SWL2_2DB_Main.py --start 2026-03-16 --end 2026-03-18
 python rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2026-03-16 --end 2026-03-18
-python rq_history_backfill/get_rq_in_index.py --start 2026-03-16 --end 2026-03-18
+
 ```
 
 **单日**（财务脚本）：
