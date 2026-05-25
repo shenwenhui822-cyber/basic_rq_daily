@@ -14,7 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 
 from scheduled_jobs.config import mongo_trade_alias
-from scheduled_jobs.jobs.registry import JOB_REGISTRY, run_job
+from scheduled_jobs.jobs.registry import JOB_REGISTRY, resolve_run_targets, run_job
 from scheduled_jobs.notify.email import notify_configured
 from trade_date_utils import is_trade_day
 
@@ -114,13 +114,26 @@ def start_server(*, port: int = 7331, notify: bool = True) -> None:
                 return
 
             if path == "/run":
-                job_id = (qs.get("job") or [None])[0]
-                targets = JOB_REGISTRY
-                if job_id:
-                    targets = [s for s in JOB_REGISTRY if s.job_id == job_id]
-                    if not targets:
-                        self._send_json(404, {"error": f"unknown job: {job_id}"})
-                        return
+                job_param = (qs.get("job") or [None])[0]
+                targets = resolve_run_targets(job_param)
+                if targets is None:
+                    self._send_json(
+                        400,
+                        {
+                            "error": "missing job parameter",
+                            "hint": "须指定 job=all 或 job=<scheduler_job_key>，裸 /run 不会执行任何任务",
+                            "examples": [
+                                "/run?job=all",
+                                "/run?job=rq_base_info",
+                                "/run?job=rq_basic_financial",
+                                "/run?job=rq_in_index",
+                            ],
+                        },
+                    )
+                    return
+                if not targets:
+                    self._send_json(404, {"error": f"unknown job: {job_param}"})
+                    return
 
                 def _bg() -> None:
                     for spec in targets:
@@ -135,6 +148,7 @@ def start_server(*, port: int = 7331, notify: bool = True) -> None:
                     {
                         "status": "accepted",
                         "jobs": [s.job_id for s in targets],
+                        "order": "SCHEDULE_ENTRIES" if str(job_param).strip().lower() == "all" else "single",
                     },
                 )
                 return
@@ -143,7 +157,11 @@ def start_server(*, port: int = 7331, notify: bool = True) -> None:
                 404,
                 {
                     "error": "not found",
-                    "paths": ["/health", "/run", "/run?job=rq_base_info"],
+                    "paths": [
+                        "/health",
+                        "/run?job=all",
+                        "/run?job=rq_base_info",
+                    ],
                 },
             )
 

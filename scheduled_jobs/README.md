@@ -36,8 +36,10 @@ chmod +x start_scheduled_jobs.sh
 python scheduled_jobs/run_server.py --port 7331
 ```
 
-- `http://127.0.0.1:7331/health`
-- `http://127.0.0.1:7331/run?job=rq_in_index`
+- `http://127.0.0.1:7331/health` — 服务状态
+- `http://127.0.0.1:7331/run?job=all` — 按 `SCHEDULE_ENTRIES` 顺序手动跑全部日更
+- `http://127.0.0.1:7331/run?job=rq_base_info` — 只跑单个任务
+- 裸 `/run` **不会执行**任何任务
 
 邮件：根目录 `.env` 中 `ALPHA_NOTIFY_*`。
 

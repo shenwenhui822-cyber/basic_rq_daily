@@ -93,3 +93,20 @@ def _build_registry() -> list[JobSpec]:
 
 
 JOB_REGISTRY: list[JobSpec] = _build_registry()
+
+
+def resolve_run_targets(job_param: str | None) -> list[JobSpec] | None:
+    """
+    解析 /run 的 job 参数。
+
+    - 未传 job：返回 None（不执行）
+    - job=all：按 SCHEDULE_ENTRIES 顺序返回全部任务
+    - 其它：单个 scheduler_job_key
+    """
+    if job_param is None or not str(job_param).strip():
+        return None
+    key = str(job_param).strip()
+    if key.lower() == "all":
+        return list(JOB_REGISTRY)
+    matches = [s for s in JOB_REGISTRY if s.job_id == key]
+    return matches if matches else []
