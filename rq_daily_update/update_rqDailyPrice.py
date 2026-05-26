@@ -24,10 +24,10 @@ bootstrap(__file__)
 import argparse
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import rqdatac as rq
 
+from rq_daily_price_format import prepare_daily_price_df_for_mongo
 from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 from usedbdef import get_client
 
@@ -64,10 +64,6 @@ def _rq_code_to_display(code_rq: str) -> str:
     if ".XSHG" in code_rq:
         return "SH" + code_rq.split(".")[0]
     return code_rq
-
-
-def _df_nan_to_none(df: pd.DataFrame) -> pd.DataFrame:
-    return df.replace({np.nan: None})
 
 
 def _load_today_base_info_codes(*, table: Any, today_str: str) -> list[str]:
@@ -107,7 +103,7 @@ def _daily_wide_to_long(df_wide: pd.DataFrame, trade_date: str) -> pd.DataFrame:
         stacked["code"] = stacked["code_rq"].astype(str).map(_rq_code_to_display)
         stacked = stacked.drop(columns=["datetime"])
         price_cols = [c for c in DAILY_PRICE_FIELDS if c in stacked.columns]
-        return stacked[["date", "code", "code_rq"] + price_cols]
+        return prepare_daily_price_df_for_mongo(stacked[["date", "code", "code_rq"] + price_cols])
 
     out = out.reset_index()
     id_col = "order_book_id" if "order_book_id" in out.columns else None
@@ -129,7 +125,7 @@ def _daily_wide_to_long(df_wide: pd.DataFrame, trade_date: str) -> pd.DataFrame:
     out["date"] = db_date
     out["code"] = out["code_rq"].astype(str).map(_rq_code_to_display)
     price_cols = [c for c in DAILY_PRICE_FIELDS if c in out.columns]
-    return out[["date", "code", "code_rq"] + price_cols]
+    return prepare_daily_price_df_for_mongo(out[["date", "code", "code_rq"] + price_cols])
 
 
 def _fetch_today_prices(codes: list[str], today_str: str, chunk_size: int = 2000) -> pd.DataFrame:
@@ -159,7 +155,7 @@ def _fetch_today_prices(codes: list[str], today_str: str, chunk_size: int = 2000
 
     out = pd.concat(parts, ignore_index=True)
     out = out.drop_duplicates(subset=["date", "code_rq"], keep="last")
-    return _df_nan_to_none(out).sort_values(by=["date", "code"]).reset_index(drop=True)
+    return prepare_daily_price_df_for_mongo(out).sort_values(by=["date", "code"]).reset_index(drop=True)
 
 
 def update_rqDailyPrice(

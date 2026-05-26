@@ -8,7 +8,7 @@
 
     python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --end 2026-03-18
 
-入库 date 格式：YYYY-MM-DD（如 2022-06-22）。
+入库 date 格式：YYYY-MM-DD（如 2022-09-30）；价量数值两位小数（四舍五入）。
 """
 
 from __future__ import annotations
@@ -32,12 +32,12 @@ import rqdatac as rq
 
 from rq_getRangeDailyPrice import (
     check_rq_quota_or_exit,
-    _df_nan_to_none,
     _is_rq_column_multiindex_wide,
     _rq_code_to_display,
     fetch_range_base_info,
     to_price_lookup_df,
 )
+from rq_daily_price_format import norm_price_date_str, prepare_daily_price_df_for_mongo
 from trade_date_utils import parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
@@ -270,7 +270,7 @@ def wide_rq_daily_to_long_df(
         out["code"] = out["code_rq"].astype(str).map(_rq_code_to_display)
         out = out.drop(columns=["datetime"])
         price_cols = [c for c in fields if c in out.columns]
-        return out[["date", "code", "code_rq"] + price_cols]
+        return prepare_daily_price_df_for_mongo(out[["date", "code", "code_rq"] + price_cols])
 
     out = out.reset_index()
     id_col = None
@@ -328,7 +328,8 @@ def wide_rq_daily_to_long_df(
 
     out["code"] = out["code_rq"].astype(str).map(_rq_code_to_display)
     price_cols = [c for c in fields if c in out.columns]
-    return out[["date", "code", "code_rq"] + price_cols]
+    out = out[["date", "code", "code_rq"] + price_cols]
+    return prepare_daily_price_df_for_mongo(out)
 
 
 def _validate_daily_row_count(n: int, trade_label: str) -> None:
@@ -393,8 +394,7 @@ def save_rq_daily_prices_to_mongo(
 
         _validate_daily_row_count(len(long_df), key)
 
-        date_for_db = long_df["date"].iloc[0]
-        long_df = _df_nan_to_none(long_df)
+        date_for_db = norm_price_date_str(long_df["date"].iloc[0])
 
         if delete_before_insert:
             date_variants = [date_for_db, date_for_db.replace("-", "/")]

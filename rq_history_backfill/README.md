@@ -27,7 +27,7 @@ python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --
 
 ```
 
-**全市场日线**（`rq_daily_price_none`）流量大，长区间默认按自然年分段；调试可加 `--no-mongo` 或 `--skip-price`。
+**全市场日线**（`rq_daily_price_none`）流量大，长区间默认按自然年分段；入库 `date` 为 `YYYY-MM-DD`，价量字段两位小数。调试可加 `--no-mongo` 或 `--skip-price`。
 
 **单日**（财务脚本）：
 
