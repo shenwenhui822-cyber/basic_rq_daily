@@ -17,7 +17,12 @@ _RUNNER_MAP: dict[str, tuple] = {}
 def _ensure_runner_map() -> None:
     if _RUNNER_MAP:
         return
-    from scheduled_jobs.jobs import rq_base_info, rq_basic_financial, rq_in_index
+    from scheduled_jobs.jobs import (
+        rq_base_info,
+        rq_basic_financial,
+        rq_in_index,
+        rq_swl2,
+    )
 
     _RUNNER_MAP.update(
         {
@@ -32,6 +37,10 @@ def _ensure_runner_map() -> None:
             rq_in_index.SCHEDULER_JOB_KEY: (
                 rq_in_index.run,
                 "rq_base_index：交易日更新上一交易日宽基成分（依赖 rq_base_info）",
+            ),
+            rq_swl2.SCHEDULER_JOB_KEY: (
+                rq_swl2.run,
+                "rq_daily_indusSWL2：交易日更新上一交易日申万二级行业成分",
             ),
         }
     )
