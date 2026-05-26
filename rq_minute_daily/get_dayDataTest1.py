@@ -1,5 +1,5 @@
 """
-日线宽表：`rq.get_price` 封装；与 ``update_rqDailyPrice.DAILY_PRICE_FIELDS`` 对齐。
+日线宽表：`rq.get_price` 封装；与 ``rq_daily_update/update_rqDailyPrice.DAILY_PRICE_FIELDS`` 对齐。
 
 使用前需已由调用方执行 ``rqdatac.init``（与各 range 管线脚本一致）。
 """

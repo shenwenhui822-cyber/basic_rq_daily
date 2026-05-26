@@ -9,6 +9,7 @@
 | `update_rq_in_index.py` | `rq_base_index` |
 | `update_rq_SWL2.py` | `rq_daily_indusSWL2` |
 | `update_rq_SWL2_price.py` | `rq_daily_indusSWL2_price` |
+| `update_rqDailyPrice.py` | `rq_daily_price_none`（全市场不复权日线，依赖 `rq_base_info`） |
 
 **A 链路顺序**（不可颠倒）：`update_rqbaseInfo` → `update_rq_basic_financail` → `update_rq_in_index`。
 
@@ -20,6 +21,7 @@
 python rq_daily_update/update_rqbaseInfo.py
 python rq_daily_update/update_rq_basic_financail.py
 python rq_daily_update/update_rq_in_index.py
+python rq_daily_update/update_rqDailyPrice.py
 ```
 
 共用上级 `mongo_connect.py`、`trade_date_utils.py`、`usedbdef.py`；`update_rq_in_index` / `update_rq_SWL2_price` 会引用 `rq_history_backfill` 中的逻辑模块。

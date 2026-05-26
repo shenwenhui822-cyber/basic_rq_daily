@@ -35,6 +35,7 @@
 | `rq_base_index` | 宽基成分 0/1 | 日更：`rq_daily_update/update_rq_in_index.py`；区间：`rq_history_backfill/get_rq_in_index.py` |
 | `rq_daily_indusSWL2` | 申万二级行业成分 | SWL2：`rq_daily_update/update_rq_SWL2.py`（`run_swl2_daily.bat`） |
 | `rq_daily_indusSWL2_price` | 申万二级成分 + 行业指数日 K | SWL2：`rq_daily_update/update_rq_SWL2_price.py` |
+| `rq_daily_price_none` | 全市场股票不复权日 K | 日更：`rq_daily_update/update_rqDailyPrice.py`；区间：`rq_history_backfill/rq_getRangeDailyPriceLongrun.py` |
 | `rq_bench` | 基准指数行情（对标 Wind bench） | B：`updatebench_quarterly_yearly.bat` 第 1 步 |
 | `rq_quarterly` | 季报 PIT + 按 universe 前向补齐 | B：第 2 步 |
 | `rq_yearly` | 年报 PIT + 按 universe 前向补齐 | B：第 3 步 |
@@ -60,6 +61,7 @@
 | `rq_daily_update/update_rq_in_index.py` | `rq_base_index` |
 | `rq_daily_update/update_rq_SWL2.py` | `rq_daily_indusSWL2` |
 | `rq_daily_update/update_rq_SWL2_price.py` | `rq_daily_indusSWL2_price` |
+| `rq_daily_update/update_rqDailyPrice.py` | `rq_daily_price_none` |
 
 补跑指定日：`python rq_daily_update/update_rqbaseInfo.py --date 20260515`（亦支持 `2026/05/15`、`2026-05-15`）。建议计划任务安排在 **20:00 之后**，与 T-1 策略一致。
 
@@ -159,6 +161,7 @@ pip install -r requirements-basic_rq_daily.txt
 | 3 | `rq_history_backfill/get_SWL2_2DB_Main.py` | `rq_daily_indusSWL2` | `--start` / `--end` |
 | 4 | `rq_history_backfill/get_SWL2_2DB_price_Main.py` | `rq_daily_indusSWL2_price` | `--start` / `--end`（建议步骤 3 之后） |
 | 5 | `rq_history_backfill/get_rq_in_index.py` | `rq_base_index` | `--start` / `--end`（须对应区间已在 `rq_base_info`） |
+| 6 | `rq_history_backfill/rq_getRangeDailyPriceLongrun.py` | `rq_daily_price_none` | `--start` / `--end`（流量大，长区间按年分段） |
 
 示例：
 
@@ -206,7 +209,7 @@ python rq_history_backfill/get_rq_in_index.py --start 2026-03-16 --end 2026-03-1
 ## 十一、不包含的内容
 
 **RQ 1 分钟线**在 **`packforcolleague/rq_minute_daily/`**。  
-MC400、全市场日线价量等仍在主仓库其它脚本；可从 **`UpdataDaily`** 或 **`v3_1`** 工程另行获取。
+全市场不复权日线见 **`rq_daily_update/update_rqDailyPrice.py`** 与 **`rq_history_backfill/rq_getRangeDailyPriceLongrun.py`**。MC400 等仍在主仓库其它脚本。
 
 ---
 

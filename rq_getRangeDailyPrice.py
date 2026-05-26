@@ -1,7 +1,7 @@
 """
 区间日线/分钟共用：交易日基础表（RQ 全市）→ ``date`` + ``code_rq`` lookup。
 
-被 ``rq_getRangeMinPrice.py`` 引用；逻辑与 ``rq_getRangeDailyPriceLongrun.py`` 前半段对齐。
+被 ``rq_getRangeMinPrice.py`` 引用；逻辑与 ``rq_history_backfill/rq_getRangeDailyPriceLongrun.py`` 前半段对齐。
 """
 
 from __future__ import annotations

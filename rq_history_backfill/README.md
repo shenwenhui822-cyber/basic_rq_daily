@@ -11,6 +11,7 @@
 | 3 | `get_SWL2_2DB_Main.py` | `rq_daily_indusSWL2` |
 | 4 | `get_SWL2_2DB_price_Main.py` | `rq_daily_indusSWL2_price` |
 | 5 | `get_rq_in_index.py` | `rq_base_index` |
+| 6 | `rq_getRangeDailyPriceLongrun.py` | `rq_daily_price_none` |
 
 ## 运行示例（同一区间）
 
@@ -22,8 +23,11 @@ python rq_history_backfill/get_rq_in_index.py --start 2026-04-02 --end 2026-05-2
 python rq_history_backfill/load_rq_basic_financialmain.py --start 2017-09-02 --end 2017-11-01
 python rq_history_backfill/get_SWL2_2DB_Main.py --start 2026-03-16 --end 2026-03-18
 python rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2026-03-16 --end 2026-03-18
+python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --end 2026-03-18
 
 ```
+
+**全市场日线**（`rq_daily_price_none`）流量大，长区间默认按自然年分段；调试可加 `--no-mongo` 或 `--skip-price`。
 
 **单日**（财务脚本）：
 
