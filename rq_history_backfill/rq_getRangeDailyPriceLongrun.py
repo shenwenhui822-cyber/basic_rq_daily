@@ -13,8 +13,11 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
+from datetime import date
 from pathlib import Path
+from typing import Any
 
 _PKG_ROOT = Path(__file__).resolve().parents[1]
 if str(_PKG_ROOT) not in sys.path:
@@ -24,18 +27,9 @@ from rq_paths import bootstrap
 
 bootstrap(__file__)
 
-_MINUTE_DIR = _PKG_ROOT / "rq_minute_daily"
-if str(_MINUTE_DIR) not in sys.path:
-    sys.path.insert(0, str(_MINUTE_DIR))
-
-import argparse
-from datetime import date
-
-import numpy as np
 import pandas as pd
 import rqdatac as rq
 
-from get_dayDataTest1 import DAILY_PRICE_FIELDS, get_daily_price_wide, normalize_price_wide
 from rq_getRangeDailyPrice import (
     check_rq_quota_or_exit,
     _df_nan_to_none,
@@ -48,6 +42,18 @@ from trade_date_utils import parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
 DATE_FMT_DB = "%Y-%m-%d"
+
+DAILY_PRICE_FIELDS = [
+    "open",
+    "high",
+    "low",
+    "close",
+    "prev_close",
+    "volume",
+    "total_turnover",
+    "limit_up",
+    "limit_down",
+]
 
 EXPECTED_STOCKS_PER_DAY = 5193
 _STOCK_COUNT_TOLERANCE = 200
@@ -97,6 +103,37 @@ def iter_year_segments(start_s: str, end_s: str):
         )
 
 
+def _get_daily_price_wide(
+    order_book_ids: list[str],
+    start_date: str,
+    end_date: str,
+    *,
+    fields: list[str] | None = None,
+) -> Any:
+    fq = fields or list(DAILY_PRICE_FIELDS)
+    return rq.get_price(
+        order_book_ids,
+        start_date=start_date,
+        end_date=end_date,
+        frequency="1d",
+        fields=fq,
+        adjust_type="none",
+        expect_df=True,
+    )
+
+
+def _normalize_price_wide(df: pd.DataFrame, fields: list[str]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
+    out = df.copy()
+    if isinstance(out.columns, pd.MultiIndex):
+        out = out.loc[:, ~out.columns.duplicated(keep="last")]
+        out = out.sort_index(axis=1)
+    elif out.columns.duplicated().any():
+        out = out.loc[:, ~out.columns.duplicated(keep="last")]
+    return out
+
+
 def _norm_lookup_dates(df_keys: pd.DataFrame) -> pd.DataFrame:
     if df_keys.empty:
         return df_keys
@@ -139,7 +176,7 @@ def run_pipeline_for_range(
 
     check_rq_quota_or_exit(label=f"{segment_label or '本段'}拉日线前")
 
-    print("\n=== 按日拉取日线宽表（get_dayDataTest1.get_daily_price_wide）===")
+    print("\n=== 按日拉取日线宽表（rq.get_price 1d, adjust_type=none）===")
     by_day = fetch_daily_prices_by_lookup(df_keys)
     print(f"\n✅ 日线宽表按日字典共 {len(by_day)} 个交易日；键为日期字符串，值为宽表 DataFrame。")
 
@@ -177,7 +214,7 @@ def fetch_daily_prices_by_lookup(
         parts: list[pd.DataFrame] = []
         for i in range(0, len(ids), max_ids_per_request):
             chunk = ids[i : i + max_ids_per_request]
-            df_p = get_daily_price_wide(chunk, rq_day, rq_day, fields=fields)
+            df_p = _get_daily_price_wide(chunk, rq_day, rq_day, fields=fields)
             if df_p is not None and not df_p.empty:
                 parts.append(df_p)
 
@@ -188,7 +225,7 @@ def fetch_daily_prices_by_lookup(
             result[key] = parts[0]
         elif _is_rq_column_multiindex_wide(parts[0]):
             merged = pd.concat(parts, axis=1)
-            result[key] = normalize_price_wide(merged, fields)
+            result[key] = _normalize_price_wide(merged, fields)
         else:
             merged_long = pd.concat(parts, axis=0, sort=False)
             if "order_book_id" in merged_long.columns:
