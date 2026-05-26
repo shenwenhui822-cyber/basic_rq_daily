@@ -50,18 +50,21 @@ def run_job(spec: JobSpec, *, notify: bool = True) -> JobResult:
             detail={"traceback": traceback.format_exc()},
         )
 
-    if notify and notify_configured() and not result.skipped:
-        title = (
-            f"[{spec.job_id}] 执行成功"
-            if result.ok
-            else f"[{spec.job_id}] 执行失败"
-        )
-        body = (
-            f"{spec.description}\n"
-            f"计划时刻：{spec.schedule_time}\n\n"
-            f"{result.message}\n\n详情：{result.detail}"
-        )
-        send_task_email(title, body)
+    if notify and not result.skipped:
+        if not notify_configured():
+            logger.warning("任务 {} 完成但未发邮件：ALPHA_NOTIFY_* 未载入进程环境", spec.job_id)
+        else:
+            title = (
+                f"[{spec.job_id}] 执行成功"
+                if result.ok
+                else f"[{spec.job_id}] 执行失败"
+            )
+            body = (
+                f"{spec.description}\n"
+                f"计划时刻：{spec.schedule_time}\n\n"
+                f"{result.message}\n\n详情：{result.detail}"
+            )
+            send_task_email(title, body)
 
     return result
 

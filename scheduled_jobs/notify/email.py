@@ -52,6 +52,6 @@ def send_task_email(title: str, content: str) -> bool:
             smtp.sendmail(user, list(receivers), msg.as_string())
         logger.info("邮件发送成功：{}", title)
         return True
-    except smtplib.SMTPException as e:
-        logger.error("邮件发送失败：{}", e)
+    except Exception as e:
+        logger.error("邮件发送失败：{} ({})", e, type(e).__name__)
         return False
