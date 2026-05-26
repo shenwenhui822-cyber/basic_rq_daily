@@ -22,6 +22,7 @@ def _ensure_runner_map() -> None:
         rq_basic_financial,
         rq_in_index,
         rq_swl2,
+        rq_swl2_price,
     )
 
     _RUNNER_MAP.update(
@@ -41,6 +42,10 @@ def _ensure_runner_map() -> None:
             rq_swl2.SCHEDULER_JOB_KEY: (
                 rq_swl2.run,
                 "rq_daily_indusSWL2：交易日更新上一交易日申万二级行业成分",
+            ),
+            rq_swl2_price.SCHEDULER_JOB_KEY: (
+                rq_swl2_price.run,
+                "rq_daily_indusSWL2_price：交易日更新上一交易日申万二级行业价量",
             ),
         }
     )

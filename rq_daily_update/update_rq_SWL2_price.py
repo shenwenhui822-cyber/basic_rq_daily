@@ -32,6 +32,8 @@ from get_SWL2_2DB_price_Main import PRICE_FIELDS, fetch_level2_index_prices
 from usedbdef import get_client, insert_db_from_df
 from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 
+DATE_FMT_DB = "%Y-%m-%d"
+
 try:
     rq.init("18616633529", "wuzhi2020")
     print("✅ RQData 连接成功")
@@ -221,9 +223,9 @@ def _cli_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = _cli_args()
     today_str = (
-        parse_explicit_date_arg(args.date, fmt="%Y/%m/%d")
+        parse_explicit_date_arg(args.date, fmt=DATE_FMT_DB)
         if args.date
-        else previous_trade_date(mongo_alias=args.mongo_alias, fmt="%Y/%m/%d")
+        else previous_trade_date(mongo_alias=args.mongo_alias, fmt=DATE_FMT_DB)
     )
 
     ok = update_rq_SWL2_price(
