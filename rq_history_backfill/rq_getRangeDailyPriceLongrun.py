@@ -272,7 +272,7 @@ def wide_rq_daily_to_long_df(
         price_cols = [c for c in fields if c in out.columns]
         return prepare_daily_price_df_for_mongo(out[["date", "code", "code_rq"] + price_cols])
 
-    out = out.reset_index()
+    out = df.reset_index()
     id_col = None
     if "order_book_id" in out.columns:
         id_col = "order_book_id"
