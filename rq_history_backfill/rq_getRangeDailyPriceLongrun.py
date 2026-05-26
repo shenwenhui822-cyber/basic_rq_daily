@@ -1,12 +1,12 @@
 """
 历史补齐 basic_rq.rq_daily_price_none（全市场不复权日线）。
 
-按区间从 RQ 拉基础表 lookup → 分批 get_price → 落库 Mongo。
-长区间默认按自然年分段以降低流量压力。
+按区间处理：**自然月**拉基础信息 lookup → 当月逐交易日 get_price → **当日即落库 Mongo**。
+外层长区间默认按自然年分段；每年段内再按自然月分批（避免一次合并全年 40 万+ 行基础表）。
 
 用法（工作目录为 basic_rq_daily 根目录）::
 
-    python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --end 2026-03-18
+    python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2020-05-02 --end 2026-01-09
 
 入库 date 格式：YYYY-MM-DD（如 2022-09-30）；价量数值两位小数（四舍五入）。
 """
@@ -103,6 +103,27 @@ def iter_year_segments(start_s: str, end_s: str):
         )
 
 
+def iter_month_segments(start_s: str, end_s: str):
+    """将 [start_s, end_s] 按自然月切段。yield (seg_start, seg_end, 'YYYY-MM')。"""
+    d0 = pd.Timestamp(start_s).normalize()
+    d1 = pd.Timestamp(end_s).normalize()
+    if d0 > d1:
+        raise ValueError(f"start 不能晚于 end：{d0.date()} > {d1.date()}")
+
+    cur = d0.replace(day=1)
+    while cur <= d1:
+        month_end = cur + pd.offsets.MonthEnd(0)
+        seg_start = max(d0, cur)
+        seg_end = min(d1, month_end)
+        if seg_start <= seg_end:
+            yield (
+                seg_start.strftime(DATE_FMT_DB),
+                seg_end.strftime(DATE_FMT_DB),
+                cur.strftime("%Y-%m"),
+            )
+        cur = (cur + pd.offsets.MonthBegin(1)).normalize()
+
+
 def _get_daily_price_wide(
     order_book_ids: list[str],
     start_date: str,
@@ -158,89 +179,191 @@ def run_pipeline_for_range(
 
     check_rq_quota_or_exit(label=f"{segment_label or '本段'}开始前")
 
-    df = fetch_range_base_info(start_s, end_s)
-    if df.empty:
-        print(f"  [{segment_label}] 无基础数据，跳过本段。")
-        return
+    months = list(iter_month_segments(start_s, end_s))
+    print(f"本段共 {len(months)} 个自然月，按月：拉基础信息 → 逐交易日拉日线落库")
 
-    print("\n完整基础表预览（前 5 行）:")
-    print(df.head())
-    df_keys = _norm_lookup_dates(to_price_lookup_df(df))
-    print("\n供 get_price 使用：仅 date + code_rq（去重后，前 10 行）:")
-    print(df_keys.head(10))
-    print(f"date+code_rq 行数: {len(df_keys)}")
+    total_ok = 0
+    total_days = 0
+
+    for m_idx, (m_start, m_end, month_label) in enumerate(months, start=1):
+        print(f"\n{'-'*50}\n[{m_idx}/{len(months)}] 自然月 {month_label}：{m_start} ~ {m_end}\n{'-'*50}")
+
+        check_rq_quota_or_exit(label=f"{month_label} 拉基础信息前")
+
+        df = fetch_range_base_info(m_start, m_end)
+        if df.empty:
+            print(f"  月 {month_label} 无基础数据，跳过。")
+            continue
+
+        df_keys = _norm_lookup_dates(to_price_lookup_df(df))
+        n_days = df_keys["date"].nunique() if not df_keys.empty else 0
+        print(
+            f"月 {month_label} lookup：{len(df_keys)} 行（{n_days} 个交易日），"
+            f"预览:\n{df_keys.head(3)}"
+        )
+        del df
+
+        if skip_price:
+            continue
+
+        check_rq_quota_or_exit(label=f"{month_label} 拉日线前")
+
+        ok_days, days = fetch_and_persist_daily_prices(
+            df_keys,
+            no_mongo=no_mongo,
+            mongo_alias=mongo_alias,
+            mongo_db=mongo_db,
+            mongo_collection=mongo_collection,
+            month_label=month_label,
+        )
+        total_ok += ok_days
+        total_days += days
+        del df_keys
+
+        print(
+            f"✅ 月 {month_label} 完成：{ok_days}/{days} 个交易日"
+            + (" 已写入 Mongo" if not no_mongo else "（未写库）")
+        )
 
     if skip_price:
         print("\n已跳过日线下载（--skip-price）。")
         return
 
-    check_rq_quota_or_exit(label=f"{segment_label or '本段'}拉日线前")
-
-    print("\n=== 按日拉取日线宽表（rq.get_price 1d, adjust_type=none）===")
-    by_day = fetch_daily_prices_by_lookup(df_keys)
-    print(f"\n✅ 日线宽表按日字典共 {len(by_day)} 个交易日；键为日期字符串，值为宽表 DataFrame。")
-
-    print("\n=== 核对每日约 5193 行：lookup 标的数 vs 长表行数 ===")
-    compare_lookup_to_long(df_keys, by_day)
-
-    if no_mongo:
-        print("\n已跳过 MongoDB（--no-mongo）。")
-        return
-
-    save_rq_daily_prices_to_mongo(
-        by_day,
-        mongo_alias=mongo_alias,
-        mongo_db=mongo_db,
-        mongo_collection=mongo_collection,
+    print(
+        f"\n✅ {banner} 全部月份完成：{total_ok}/{total_days} 个交易日"
+        + (" 已写入 Mongo" if not no_mongo else "（未写库 --no-mongo）")
     )
 
 
-def fetch_daily_prices_by_lookup(
+def _merge_daily_wide_parts(
+    parts: list[pd.DataFrame],
+    *,
+    fields: list[str],
+) -> pd.DataFrame:
+    if not parts:
+        return pd.DataFrame()
+    if len(parts) == 1:
+        return parts[0]
+    if _is_rq_column_multiindex_wide(parts[0]):
+        merged = pd.concat(parts, axis=1)
+        return _normalize_price_wide(merged, fields)
+    merged_long = pd.concat(parts, axis=0, sort=False)
+    if "order_book_id" in merged_long.columns:
+        merged_long = merged_long.drop_duplicates(subset=["order_book_id"], keep="last")
+    elif merged_long.index.name == "order_book_id":
+        merged_long = merged_long[~merged_long.index.duplicated(keep="last")]
+    return merged_long
+
+
+def _fetch_one_day_wide(
+    ids: list[str],
+    trade_date: str,
+    *,
+    fields: list[str],
+    max_ids_per_request: int = 2000,
+) -> pd.DataFrame:
+    if not ids:
+        return pd.DataFrame()
+    rq_day = pd.Timestamp(trade_date).strftime("%Y/%m/%d")
+    parts: list[pd.DataFrame] = []
+    for i in range(0, len(ids), max_ids_per_request):
+        chunk = ids[i : i + max_ids_per_request]
+        df_p = _get_daily_price_wide(chunk, rq_day, rq_day, fields=fields)
+        if df_p is not None and not df_p.empty:
+            parts.append(df_p)
+    return _merge_daily_wide_parts(parts, fields=fields)
+
+
+def save_one_day_to_mongo(
+    table: Any,
+    long_df: pd.DataFrame,
+    trade_date: str,
+    *,
+    delete_before_insert: bool = True,
+) -> None:
+    if long_df.empty:
+        print(f"  跳过空长表：{trade_date}")
+        return
+
+    date_for_db = norm_price_date_str(long_df["date"].iloc[0])
+    if delete_before_insert:
+        date_variants = [date_for_db, date_for_db.replace("-", "/")]
+        dr = table.delete_many({"date": {"$in": date_variants}})
+        print(f"  已删除当日旧记录：{dr.deleted_count} 条")
+
+    insert_db_from_df(table, long_df.sort_values(by=["date", "code"]))
+    print(f"  ✅ 已插入 {len(long_df)} 条（date={date_for_db}）")
+
+
+def fetch_and_persist_daily_prices(
     df_keys: pd.DataFrame,
     *,
     fields: list[str] | None = None,
     max_ids_per_request: int = 2000,
-) -> dict[str, pd.DataFrame]:
+    no_mongo: bool = False,
+    mongo_alias: str = "wonderwz27018_rw",
+    mongo_db: str = "basic_rq",
+    mongo_collection: str = "rq_daily_price_none",
+    month_label: str = "",
+) -> tuple[int, int]:
+    """逐交易日拉取日线；每完成一日即核对并写入 Mongo（若未 --no-mongo）。"""
     fields = fields or DAILY_PRICE_FIELDS
     if df_keys.empty:
-        return {}
+        return 0, 0
 
-    result: dict[str, pd.DataFrame] = {}
-    for trade_date, g in df_keys.groupby("date", sort=True):
-        ids = g["code_rq"].tolist()
-        if not ids:
-            continue
-        rq_day = pd.Timestamp(trade_date).strftime("%Y/%m/%d")
-        parts: list[pd.DataFrame] = []
-        for i in range(0, len(ids), max_ids_per_request):
-            chunk = ids[i : i + max_ids_per_request]
-            df_p = _get_daily_price_wide(chunk, rq_day, rq_day, fields=fields)
-            if df_p is not None and not df_p.empty:
-                parts.append(df_p)
+    table = None
+    if not no_mongo:
+        client = get_client(mongo_alias)
+        table = client[mongo_db][mongo_collection]
 
+    prefix = f"{month_label} " if month_label else ""
+    print(f"\n=== {prefix}逐日拉取日线并落库 {mongo_db}.{mongo_collection} ===")
+
+    ok_days = 0
+    total_days = 0
+    grouped = list(df_keys.groupby("date", sort=True))
+    n_trade = len(grouped)
+
+    for idx, (trade_date, g) in enumerate(grouped, start=1):
+        total_days += 1
         key = pd.Timestamp(trade_date).strftime(DATE_FMT_DB)
-        if not parts:
-            result[key] = pd.DataFrame()
-        elif len(parts) == 1:
-            result[key] = parts[0]
-        elif _is_rq_column_multiindex_wide(parts[0]):
-            merged = pd.concat(parts, axis=1)
-            result[key] = _normalize_price_wide(merged, fields)
-        else:
-            merged_long = pd.concat(parts, axis=0, sort=False)
-            if "order_book_id" in merged_long.columns:
-                merged_long = merged_long.drop_duplicates(
-                    subset=["order_book_id"], keep="last"
-                )
-            elif merged_long.index.name == "order_book_id":
-                merged_long = merged_long[~merged_long.index.duplicated(keep="last")]
-            result[key] = merged_long
+        ids = g["code_rq"].tolist()
+        n_lk = len(ids)
 
-        nrows = len(result[key])
-        print(
-            f"  日线宽表 {key}: 标的 {len(ids)} 只, 宽表行数 {nrows}, 列数 {result[key].shape[1]}"
+        print(f"\n>>> [{idx}/{n_trade}] 拉取 {key}，标的 {n_lk} 只 …")
+        df_wide = _fetch_one_day_wide(
+            ids,
+            key,
+            fields=fields,
+            max_ids_per_request=max_ids_per_request,
         )
-    return result
+        n_wide = len(df_wide)
+        print(f"  日线宽表 {key}: 宽表行数 {n_wide}, 列数 {df_wide.shape[1] if not df_wide.empty else 0}")
+
+        long_df = wide_rq_daily_to_long_df(df_wide, fields=fields, trade_date_hint=key)
+        n_long = len(long_df)
+        if n_lk != n_long:
+            print(
+                f"  ⚠️ {key}: lookup={n_lk} 与长表={n_long} 不一致，仍按长表落库"
+            )
+        else:
+            print(f"  ✓ {key}: lookup={n_lk} 行 = 长表={n_long} 行")
+
+        _validate_daily_row_count(n_long, key)
+
+        if no_mongo:
+            if not long_df.empty:
+                ok_days += 1
+            continue
+
+        if long_df.empty:
+            print(f"  ⚠️ {key}: 长表为空，跳过写库")
+            continue
+
+        save_one_day_to_mongo(table, long_df, key)
+        ok_days += 1
+
+    return ok_days, total_days
 
 
 def wide_rq_daily_to_long_df(
@@ -346,65 +469,6 @@ def _validate_daily_row_count(n: int, trade_label: str) -> None:
         print(f"  ✓ [{trade_label}] 长表行数 {n}（约全市场 {EXPECTED_STOCKS_PER_DAY}）")
 
 
-def compare_lookup_to_long(df_keys: pd.DataFrame, by_day: dict[str, pd.DataFrame]) -> None:
-    if df_keys.empty or not by_day:
-        return
-    for trade_date, g in df_keys.groupby("date", sort=False):
-        key = pd.Timestamp(trade_date).strftime(DATE_FMT_DB)
-        if key not in by_day:
-            print(f"  ⚠️ lookup 有日期 {key}，但无对应宽表")
-            continue
-        n_lk = len(g)
-        long_df = wide_rq_daily_to_long_df(by_day[key], trade_date_hint=key)
-        n_long = len(long_df)
-        if n_lk != n_long:
-            print(
-                f"  ⚠️ {key}: 基础表当日标的 {n_lk} 与日线长表行数 {n_long} 不一致，请检查缺失标的"
-            )
-        else:
-            print(f"  ✓ {key}: lookup={n_lk} 行 = 长表={n_long} 行")
-
-
-def save_rq_daily_prices_to_mongo(
-    by_day: dict[str, pd.DataFrame],
-    *,
-    mongo_alias: str = "wonderwz27018_rw",
-    mongo_db: str = "basic_rq",
-    mongo_collection: str = "rq_daily_price_none",
-    fields: list[str] | None = None,
-    delete_before_insert: bool = True,
-) -> None:
-    fields = fields or DAILY_PRICE_FIELDS
-    if not by_day:
-        print("无日线数据，跳过 MongoDB 写入。")
-        return
-
-    client = get_client(mongo_alias)
-    table = client[mongo_db][mongo_collection]
-    print(f"\n=== 写入 MongoDB {mongo_db}.{mongo_collection}（{mongo_alias}）===")
-
-    for trade_key, df_wide in by_day.items():
-        key = pd.Timestamp(trade_key).strftime(DATE_FMT_DB)
-        long_df = wide_rq_daily_to_long_df(
-            df_wide, fields=fields, trade_date_hint=key
-        )
-        if long_df.empty:
-            print(f"  跳过空长表：{key}")
-            continue
-
-        _validate_daily_row_count(len(long_df), key)
-
-        date_for_db = norm_price_date_str(long_df["date"].iloc[0])
-
-        if delete_before_insert:
-            date_variants = [date_for_db, date_for_db.replace("-", "/")]
-            dr = table.delete_many({"date": {"$in": date_variants}})
-            print(f"  已删除当日旧记录：{dr.deleted_count} 条")
-
-        insert_db_from_df(table, long_df.sort_values(by=["date", "code"]))
-        print(f"  ✅ 已插入 {len(long_df)} 条（date={date_for_db}）")
-
-
 def run_longrange_backfill(
     *,
     start_date: str,
@@ -454,7 +518,10 @@ def run_longrange_backfill(
         return
 
     segments = list(iter_year_segments(start_s, end_s))
-    print(f"\n将按自然年分段执行，共 {len(segments)} 个年段（每年段内仍会逐交易日拉数）。")
+    print(
+        f"\n将按自然年分段执行，共 {len(segments)} 个年段；"
+        "每年段内按自然月拉基础信息，再逐交易日拉日线落库。"
+    )
 
     for seg_start, seg_end, year in segments:
         run_pipeline_for_range(
