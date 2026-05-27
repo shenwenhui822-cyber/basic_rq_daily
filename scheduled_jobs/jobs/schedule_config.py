@@ -11,13 +11,13 @@ from typing import Any
 
 # (触发时刻, 任务显示名, 参数)
 SCHEDULE_ENTRIES: list[tuple[str, str, dict[str, Any]]] = [
-    ("07:03", "update_rq_base_info", {"scheduler_job_key": "rq_base_info"}),
-    ("07:05", "update_rq_basic_financial", {"scheduler_job_key": "rq_basic_financial"}),
-    ("07:07", "update_rq_in_index", {"scheduler_job_key": "rq_in_index"}),
-    ("07:10", "update_rq_SWL2", {"scheduler_job_key": "rq_swl2"}),
-    ("07:13", "update_rq_SWL2_price", {"scheduler_job_key": "rq_swl2_price"}),
-    ("07:15", "update_rq_bench", {"scheduler_job_key": "rq_bench"}),
-    ("07:18", "update_rqDailyPrice", {"scheduler_job_key": "rq_daily_price"}),
+    ("09:03", "update_rq_base_info", {"scheduler_job_key": "rq_base_info"}),
+    ("09:05", "update_rq_basic_financial", {"scheduler_job_key": "rq_basic_financial"}),
+    ("09:07", "update_rq_in_index", {"scheduler_job_key": "rq_in_index"}),
+    ("09:10", "update_rq_SWL2", {"scheduler_job_key": "rq_swl2"}),
+    ("09:13", "update_rq_SWL2_price", {"scheduler_job_key": "rq_swl2_price"}),
+    ("09:15", "update_rq_bench", {"scheduler_job_key": "rq_bench"}),
+    ("09:18", "update_rqDailyPrice", {"scheduler_job_key": "rq_daily_price"}),
 ]
 
 
