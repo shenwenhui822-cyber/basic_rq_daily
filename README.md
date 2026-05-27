@@ -36,7 +36,7 @@
 | `rq_daily_indusSWL2` | 申万二级行业成分 | SWL2：`rq_daily_update/update_rq_SWL2.py`（`run_swl2_daily.bat`） |
 | `rq_daily_indusSWL2_price` | 申万二级成分 + 行业指数日 K | SWL2：`rq_daily_update/update_rq_SWL2_price.py` |
 | `rq_daily_price_none` | 全市场股票不复权日 K | 日更：`rq_daily_update/update_rqDailyPrice.py`；区间：`rq_history_backfill/rq_getRangeDailyPriceLongrun.py` |
-| `rq_bench` | 基准指数行情（对标 Wind bench） | B：`updatebench_quarterly_yearly.bat` 第 1 步 |
+| `rq_bench` | 基准指数行情（对标 Wind bench） | 日更：`rq_daily_update/update_rq_bench.py`；历史：`rq_history_backfill/backfill_rq_bench.py` |
 | `rq_quarterly` | 季报 PIT + 按 universe 前向补齐 | B：第 2 步 |
 | `rq_yearly` | 年报 PIT + 按 universe 前向补齐 | B：第 3 步 |
 

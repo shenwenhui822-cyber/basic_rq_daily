@@ -1,18 +1,7 @@
 """
-每日更新 basic_rq.rq_bench（用于定时任务）。
+兼容入口：推荐改用 ``rq_daily_update/update_rq_bench.py``。
 
-默认策略（auto-mode=today_if_trade）：
-- 若 run-date 是交易日：更新 run-date 当天 bench
-- 若 run-date 非交易日：更新 run-date 之前最近一个交易日 bench
-
-可选策略（auto-mode=previous_trade）：
-- 始终更新 run-date 之前最近一个交易日（适合次日早晨跑昨收）
-
-用法（项目根目录，PYTHONPATH=.）：
-  python -u MasterData/data_rq/update_daily_bench.py
-  python -u MasterData/data_rq/update_daily_bench.py --run-date 2026-04-20
-  python -u MasterData/data_rq/update_daily_bench.py --auto-mode previous_trade
-  python -u MasterData/data_rq/update_daily_bench.py --pre-day 2026-04-17
+本脚本保留 auto-mode / run-date 参数，内部转调 ``rq_history_backfill/backfill_rq_bench``。
 """
 
 from __future__ import annotations
@@ -22,9 +11,11 @@ import datetime as dt
 import os
 import sys
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+LIB = os.path.join(ROOT, "lib")
+for _p in (ROOT, LIB):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 # Windows 控制台默认 gbk 时，先切 stdout/stderr 到 utf-8，
 # 避免 import update_rq_bench 时其 emoji 日志触发编码异常。
@@ -34,7 +25,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from DataBase.db_client import get_client_U
-from MasterData.data_rq.update_rq_bench import create_indexes_rq_bench, update_rq_bench
+from rq_history_backfill.backfill_rq_bench import create_indexes_rq_bench, update_rq_bench
 
 
 def _norm_day(s: str) -> str:

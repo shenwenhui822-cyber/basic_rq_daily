@@ -12,6 +12,7 @@
 | 4 | `get_SWL2_2DB_price_Main.py` | `rq_daily_indusSWL2_price` |
 | 5 | `get_rq_in_index.py` | `rq_base_index` |
 | 6 | `rq_getRangeDailyPriceLongrun.py` | `rq_daily_price_none` |
+| 7 | `backfill_rq_bench.py` | `rq_bench` |
 
 ## 运行示例（同一区间）
 
@@ -22,8 +23,9 @@ python rq_history_backfill/load_rqbaseInfofastmain.py --start 20150105 --end 201
 python rq_history_backfill/get_rq_in_index.py --start 2026-04-02 --end 2026-05-22
 python rq_history_backfill/load_rq_basic_financialmain.py --start 2017-09-02 --end 2017-11-01
 python rq_history_backfill/get_SWL2_2DB_Main.py --start 2026-03-16 --end 2026-03-18
-python rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2026-03-16 --end 2026-03-18
+python3 rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2023-04-01 --end 2026-05-25
 python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --end 2026-03-18
+python rq_history_backfill/backfill_rq_bench.py --start 2020-01-02 --end 2026-01-09
 
 ```
 

@@ -14,9 +14,9 @@ SCHEDULE_ENTRIES: list[tuple[str, str, dict[str, Any]]] = [
     ("09:03", "update_rq_base_info", {"scheduler_job_key": "rq_base_info"}),
     ("09:05", "update_rq_basic_financial", {"scheduler_job_key": "rq_basic_financial"}),
     ("09:07", "update_rq_in_index", {"scheduler_job_key": "rq_in_index"}),
-    # ("09:13", "update_rq_SWL2_price", {"scheduler_job_key": "rq_swl2_price"}),
     ("09:10", "update_rq_SWL2", {"scheduler_job_key": "rq_swl2"}),
-    # 示例：后续可继续添加
+    ("13:30", "update_rq_SWL2_price", {"scheduler_job_key": "rq_swl2_price"}),
+    # ("09:15", "update_rqDailyPrice", {"scheduler_job_key": "rq_daily_price"}),
     # ("09:00", "auto_import_htzq_ht1_capital_mail", {"scheduler_job_key": "htzq_ht1_capital"}),
 ]
 
