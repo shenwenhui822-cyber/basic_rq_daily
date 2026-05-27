@@ -9,6 +9,7 @@ from loguru import logger
 from scheduled_jobs.jobs.base import JobResult, JobSpec
 from scheduled_jobs.jobs.schedule_config import SCHEDULE_ENTRIES, parse_hhmm
 from scheduled_jobs.notify.email import notify_configured, send_task_email
+from scheduled_jobs.notify.rq_logs import write_job_log
 
 # scheduler_job_key -> (runner, 描述)
 _RUNNER_MAP: dict[str, tuple] = {}
@@ -73,6 +74,8 @@ def run_job(spec: JobSpec, *, notify: bool = True) -> JobResult:
             message=str(e),
             detail={"traceback": traceback.format_exc()},
         )
+
+    write_job_log(spec, result, notify=notify)
 
     if notify and not result.skipped:
         if not notify_configured():

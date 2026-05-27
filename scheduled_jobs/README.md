@@ -50,4 +50,10 @@ python scheduled_jobs/run_server.py --port 7331
 
 邮件：根目录 `.env` 中 `ALPHA_NOTIFY_*`。
 
+## 运行日志（MongoDB）
+
+每次任务执行完成后、**发送邮件之前**，写入 `basic_rq_logs.rq_logs`（可用环境变量 `RQ_LOGS_DB` / `RQ_LOGS_COLLECTION` 覆盖）。
+
+主要字段：`run_at`、`job_id`、`task_name`、`schedule_time`、`ok`、`skipped`、`message`、`detail`、`email_pending`。
+
 入库 **date** 格式统一为 **`YYYY-MM-DD`**（如 `2015-09-30`）。

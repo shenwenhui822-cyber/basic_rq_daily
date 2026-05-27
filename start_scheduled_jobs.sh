@@ -10,7 +10,7 @@ fi
 # basic_rq 定时任务服务启动脚本 (Ubuntu)
 # 功能：
 #   1. 启动前检查目标端口；若已被占用则终止占用进程后再启动
-#   2. 启动 scheduled_jobs/run_server.py（交易日按计划执行日更任务）
+#   2. 启动 main.py（交易日按计划执行日更任务）
 #   3. 支持自定义 HTTP 端口（Mongo 连接见 mongo_connect.py / .env 中 MONGO_TRADE_ALIAS）
 # ======================================
 
@@ -100,8 +100,8 @@ precheck_linux_env() {
         echo "[WARN] 未找到 .env，请复制 .env.example 并配置 MONGO_TRADE_ALIAS、ALPHA_NOTIFY_*"
     fi
 
-    if [ ! -f "scheduled_jobs/run_server.py" ]; then
-        echo "[ERROR] 未找到 scheduled_jobs/run_server.py，请确认在 basic_rq_daily 根目录执行。"
+    if [ ! -f "main.py" ]; then
+        echo "[ERROR] 未找到 main.py，请确认在 basic_rq_daily 根目录执行。"
         exit 1
     fi
 
@@ -158,7 +158,7 @@ start_server() {
     echo "[INFO] 启动 basic_rq 定时任务服务 (Port: $PORT)..."
     echo "[INFO] 计划任务见 scheduled_jobs/jobs/schedule_config.py"
     echo "[INFO] 健康检查: http://<服务器IP>:${PORT}/health"
-    nohup "$PY_CMD" scheduled_jobs/run_server.py --port "$PORT" >> "$LOG_FILE" 2>&1 &
+    nohup "$PY_CMD" main.py --port "$PORT" >> "$LOG_FILE" 2>&1 &
     local pid=$!
     sleep 1
     if kill -0 "$pid" 2>/dev/null; then

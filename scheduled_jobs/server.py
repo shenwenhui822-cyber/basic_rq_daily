@@ -16,6 +16,7 @@ from loguru import logger
 from scheduled_jobs.config import mongo_trade_alias
 from scheduled_jobs.jobs.registry import JOB_REGISTRY, resolve_run_targets, run_job
 from scheduled_jobs.notify.email import notify_configured
+from scheduled_jobs.notify.rq_logs import ensure_rq_logs_indexes
 from trade_date_utils import is_trade_day
 
 
@@ -33,6 +34,7 @@ def _should_run_today(spec) -> bool:
 def start_server(*, port: int = 7331, notify: bool = True) -> None:
     alias = mongo_trade_alias()
     logger.info("Mongo 交易日历别名：{}", alias)
+    ensure_rq_logs_indexes()
     locks: dict[str, threading.Lock] = {s.job_id: threading.Lock() for s in JOB_REGISTRY}
 
     def _wrap(spec):
