@@ -20,6 +20,7 @@ def _ensure_runner_map() -> None:
     from scheduled_jobs.jobs import (
         rq_base_info,
         rq_basic_financial,
+        rq_bench,
         rq_daily_price,
         rq_in_index,
         rq_swl2,
@@ -51,6 +52,10 @@ def _ensure_runner_map() -> None:
             rq_daily_price.SCHEDULER_JOB_KEY: (
                 rq_daily_price.run,
                 "rq_daily_price_none：交易日更新上一交易日全市场不复权日线（依赖 rq_base_info）",
+            ),
+            rq_bench.SCHEDULER_JOB_KEY: (
+                rq_bench.run,
+                "rq_bench：交易日更新上一交易日基准指数行情",
             ),
         }
     )

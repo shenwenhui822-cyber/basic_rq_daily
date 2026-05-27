@@ -19,7 +19,7 @@ SCHEDULE_ENTRIES = [
 | 09:05 | `rq_basic_financial` | 上一交易日 `rq_basic_financial` |
 | 09:07 | `rq_in_index` | 上一交易日 `rq_base_index`（依赖 T-1 `rq_base_info`） |
 | 09:13 | `rq_swl2_price` | 上一交易日 `rq_daily_indusSWL2_price`（申万二级行业价量） |
-| 09:15 | `rq_daily_price` | 上一交易日 `rq_daily_price_none`（全市场不复权日线，依赖 09:03 `rq_base_info`） |
+| 09:15 | `rq_bench` | 上一交易日 `rq_bench`（基准指数行情） |
 | 09:10 | `rq_swl2` | 上一交易日 `rq_daily_indusSWL2`（申万二级行业成分） |
 
 新增任务：在 `jobs/` 增加 `xxx.py`（实现 `run()` + `SCHEDULER_JOB_KEY`），在 `registry.py` 的 `_RUNNER_MAP` 注册，并在 `SCHEDULE_ENTRIES` 追加一行。
@@ -44,7 +44,8 @@ python scheduled_jobs/run_server.py --port 7331
 - `http://127.0.0.1:7331/run?job=rq_base_info` — 只跑单个任务
 - `http://127.0.0.1:7331/run?job=rq_swl2` — 只跑申万二级行业成分
 - `http://127.0.0.1:7331/run?job=rq_swl2_price` — 只跑申万二级行业价量
-- `http://127.0.0.1:7331/run?job=rq_daily_price` — 只跑全市场日线价量
+- `http://127.0.0.1:7331/run?job=rq_bench` — 只跑基准指数行情
+- `http://127.0.0.1:7331/run?job=rq_daily_price` — 只跑全市场日线价量（需在 schedule_config 中启用）
 - 裸 `/run` **不会执行**任何任务
 
 邮件：根目录 `.env` 中 `ALPHA_NOTIFY_*`。

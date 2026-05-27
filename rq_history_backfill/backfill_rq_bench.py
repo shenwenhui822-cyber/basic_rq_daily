@@ -207,7 +207,7 @@ def backfill_rq_bench(
 ) -> None:
     client = get_client(mongo_alias)
     df_dates = pd.DataFrame(
-        client.economic.trade_dates.find(date_range, {"_id": 0})
+        client.economic.trade_dates.find({"trade_date": date_range}, {"_id": 0})
     ).sort_values("trade_date")
 
     if df_dates.empty:

@@ -2,6 +2,7 @@
 每日更新 basic_rq.rq_bench（基准指数行情，对标 Wind w_bench）。
 
 默认 T-1（上一交易日）；入库 date：YYYY-MM-DD。
+定时任务：交易日 09:15 由 scheduled_jobs/jobs/rq_bench.py 调用本脚本逻辑。
 """
 from __future__ import annotations
 
