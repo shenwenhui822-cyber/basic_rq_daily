@@ -15,6 +15,7 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 from typing import Any
+import time
 
 import os
 import sys
@@ -303,15 +304,18 @@ def update_rq_quarterly(
     df = df[keep]
     df = _df_nan_to_none(df)
 
+    t_insert = time.perf_counter()
     for dv in _day_variants(pre_trade_day):
         table.delete_many({"date": dv})
     table.insert_many(df.to_dict("records"), ordered=False)
+    print(f"[timing] mongo_insert: {time.perf_counter() - t_insert:.2f}s")
     print(f"✅ {target_coll} 写入 {len(df)} 条 (date={pre_trade_day})")
     return True
 
 
 def _pit_yearly_tax(codes: list[str], year_q: str, pre_trade_day: str) -> pd.DataFrame:
     date_arg = _norm_day(pre_trade_day).replace("-", "")
+    t0 = time.perf_counter()
     try:
         raw = rq.get_pit_financials_ex(
             order_book_ids=codes,
@@ -343,6 +347,7 @@ def _pit_yearly_tax(codes: list[str], year_q: str, pre_trade_day: str) -> pd.Dat
         df["code_rq"] = df["order_book_id"].astype(str)
         df["code"] = df["code_rq"].map(_rq_to_display)
         df["code_w"] = df["code_rq"].map(_rq_to_code_w)
+        print(f"[timing] pit_yearly_tax ({len(codes)} codes): {time.perf_counter() - t0:.2f}s")
         return df
     except Exception as e:
         print(f"⚠️ 年报税负 pit 拉取失败: {e}")
@@ -359,30 +364,57 @@ def _audit_map(opinion: Any) -> int:
 
 
 def _fetch_audit(codes: list[str], year_q: str, pre_trade_day: str) -> pd.DataFrame:
-    rows = []
+    if not codes:
+        return pd.DataFrame()
     date_arg = _norm_day(pre_trade_day).replace("-", "")
-    for ob in codes:
-        try:
-            a = rq.get_audit_opinion(
-                ob,
-                start_quarter=year_q,
-                end_quarter=year_q,
-                date=date_arg,
-                type="financial_statements",
-            )
-            if a is None or (isinstance(a, pd.DataFrame) and a.empty):
-                rows.append({"order_book_id": ob, "opinion_type": None})
-                continue
-            if isinstance(a, pd.DataFrame):
-                a = a.reset_index()
-                sub = a[a["type"] == "financial_statements"] if "type" in a.columns else a
+    t0 = time.perf_counter()
+    rows: list[dict] = []
+    try:
+        # 优先尝试批量调用
+        a = rq.get_audit_opinion(
+            codes,
+            start_quarter=year_q,
+            end_quarter=year_q,
+            date=date_arg,
+            type="financial_statements",
+        )
+        if a is None or (isinstance(a, pd.DataFrame) and a.empty):
+            # 全部无结果，统一置 None
+            rows = [{"order_book_id": ob, "opinion_type": None} for ob in codes]
+        else:
+            a = a.reset_index()
+            for ob in codes:
+                sub = a[(a.get("order_book_id") == ob) & (a.get("type") == "financial_statements")] if "type" in a.columns else a[a.get("order_book_id") == ob]
                 if sub.empty:
                     ot = None
                 else:
                     ot = sub.iloc[0].get("opinion_type", sub.iloc[0].get("opinion_type".lower(), None))
                 rows.append({"order_book_id": ob, "opinion_type": ot})
-        except Exception:
-            rows.append({"order_book_id": ob, "opinion_type": None})
+    except Exception:
+        # 批量失败，回退逐只
+        for ob in codes:
+            try:
+                a = rq.get_audit_opinion(
+                    ob,
+                    start_quarter=year_q,
+                    end_quarter=year_q,
+                    date=date_arg,
+                    type="financial_statements",
+                )
+                if a is None or (isinstance(a, pd.DataFrame) and a.empty):
+                    rows.append({"order_book_id": ob, "opinion_type": None})
+                    continue
+                if isinstance(a, pd.DataFrame):
+                    a = a.reset_index()
+                    sub = a[a["type"] == "financial_statements"] if "type" in a.columns else a
+                    if sub.empty:
+                        ot = None
+                    else:
+                        ot = sub.iloc[0].get("opinion_type", sub.iloc[0].get("opinion_type".lower(), None))
+                    rows.append({"order_book_id": ob, "opinion_type": ot})
+            except Exception:
+                rows.append({"order_book_id": ob, "opinion_type": None})
+    print(f"[timing] fetch_audit batch ({len(codes)} codes): {time.perf_counter() - t0:.2f}s")
     return pd.DataFrame(rows)
 
 
@@ -402,10 +434,16 @@ def update_rq_yearly(
     q_y = _iso_to_quarter(latest_year)
     q_ly = _iso_to_quarter(last_year)
 
+    t_conn = time.perf_counter()
     client = get_client(mongo_alias)
+    print(f"[timing] connect_mongo: {time.perf_counter() - t_conn:.2f}s")
+
     base = client[mongo_db][base_coll]
     table = client[mongo_db][target_coll]
+
+    t_query = time.perf_counter()
     codes = _load_codes_from_base(base, pre_trade_day)
+    print(f"[timing] query_base_info: {time.perf_counter() - t_query:.2f}s")
     if not codes:
         print("❌ rq_base_info 无当日 code_rq")
         return False
@@ -423,9 +461,11 @@ def update_rq_yearly(
         return tax.drop(columns=[c for c in ["opinion_type"] if c in tax.columns])
 
     parts: list[pd.DataFrame] = []
+    t_pit = time.perf_counter()
     for i in range(0, len(codes), chunk_size):
         chunk = codes[i : i + chunk_size]
         parts.append(_one_year(chunk, q_y))
+    print(f"[timing] pit_yearly_tax total: {time.perf_counter() - t_pit:.2f}s")
 
     nonempty = [p for p in parts if not p.empty]
     if not nonempty:

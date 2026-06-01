@@ -13,6 +13,9 @@
 | 5 | `get_rq_in_index.py` | `rq_base_index` |
 | 6 | `rq_getRangeDailyPriceLongrun.py` | `rq_daily_price_none` |
 | 7 | `backfill_rq_bench.py` | `rq_bench` |
+| 8 | `backfill_rq_quarterly_yearly.py` | `rq_quarterly` / `rq_yearly` |
+
+**季报 / 年报**完整命令与两阶段说明见 **[季报年报运行指南.md](./季报年报运行指南.md)**。
 
 ## 运行示例（同一区间）
 
@@ -26,6 +29,9 @@ python rq_history_backfill/get_SWL2_2DB_Main.py --start 2026-03-16 --end 2026-03
 python3 rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2023-04-01 --end 2026-05-25
 python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --end 2026-03-18
 python rq_history_backfill/backfill_rq_bench.py --start 2020-01-02 --end 2026-01-09
+
+# 季报历史（步骤 1 拉米筐，详见 季报年报运行指南.md）
+python -u rq_history_backfill/backfill_rq_quarterly_yearly.py --collections quarterly --start 2015-01-05 --end 2026-05-27 --no-ffill --skip-existing --mongo-alias wonderwz27018_rw
 
 ```
 
