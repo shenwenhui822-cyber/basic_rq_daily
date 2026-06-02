@@ -311,7 +311,7 @@ def update_rq_quarterly(
     table.insert_many(df.to_dict("records"), ordered=False)
     print(f"[timing] mongo_insert: {time.perf_counter() - t_insert:.2f}s")
     print(f"✅ {target_coll} 写入 {len(df)} 条 (date={pre_trade_day})")
-    return True
+    return True, len(df)
 
 
 def _pit_yearly_tax(codes: list[str], year_q: str, pre_trade_day: str) -> pd.DataFrame:
@@ -499,7 +499,7 @@ def update_rq_yearly(
 
     if df.empty:
         print("❌ 年报数据为空")
-        return False
+        return False, 0
 
     df["date"] = pre_trade_day
     keep = [

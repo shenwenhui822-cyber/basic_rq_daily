@@ -18,6 +18,13 @@ from scheduled_jobs.notify.email import DATE_FMT_DB
 SCHEDULER_JOB_KEY = "rq_quarterly"
 
 
+def _unpack_update_result(result) -> tuple[bool, int]:
+    """兼容 update_rq_* 返回 bool 或 (bool, int)。"""
+    if isinstance(result, tuple):
+        return bool(result[0]), int(result[1] or 0)
+    return bool(result), 0
+
+
 def run() -> JobResult:
     # 直接把 bench_quarterly_yearly 目录加入 sys.path，使 MasterData 可作为顶层包导入
     _BENCH_DIR = _ROOT / "bench_quarterly_yearly"
@@ -60,12 +67,14 @@ def run() -> JobResult:
     today_for_update = all_td[idx + 1] if idx + 1 < len(all_td) else pre
 
     # 1. 拉取真实 PIT
-    ok, pulled = update_rq_quarterly(
-        pre,
-        today_for_update,
-        mongo_alias=mongo_alias,
-        mongo_db=mongo_db,
-        target_coll="rq_quarterly",
+    ok, pulled = _unpack_update_result(
+        update_rq_quarterly(
+            pre,
+            today_for_update,
+            mongo_alias=mongo_alias,
+            mongo_db=mongo_db,
+            target_coll="rq_quarterly",
+        )
     )
 
     if not ok:
