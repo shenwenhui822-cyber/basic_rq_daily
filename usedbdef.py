@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from mongo_connect import get_client
 
-__all__ = ["get_client", "insert_db_from_df"]
+DEFAULT_MONGO_ALIAS = "wonderwz27018_rw"
+
+__all__ = ["get_client", "insert_db_from_df", "DEFAULT_MONGO_ALIAS"]
 
 
 # ==================== 数据库插入相关函数 ====================

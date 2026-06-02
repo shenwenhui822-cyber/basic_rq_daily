@@ -6,6 +6,8 @@
 
 `jobs/schedule_config.py`：
 
+**完整说明（时刻、落库位置、字段含义）** → **[定时任务说明.md](./定时任务说明.md)**
+
 ```python
 SCHEDULE_ENTRIES = [
     ("09:03", "update_rq_base_info", {"scheduler_job_key": "rq_base_info"}),
@@ -18,9 +20,13 @@ SCHEDULE_ENTRIES = [
 | 09:03 | `rq_base_info` | 上一交易日 `rq_base_info` |
 | 09:05 | `rq_basic_financial` | 上一交易日 `rq_basic_financial` |
 | 09:07 | `rq_in_index` | 上一交易日 `rq_base_index`（依赖 T-1 `rq_base_info`） |
+| 09:10 | `rq_swl2` | 上一交易日 `rq_daily_indusSWL2`（申万二级行业成分） |
 | 09:13 | `rq_swl2_price` | 上一交易日 `rq_daily_indusSWL2_price`（申万二级行业价量） |
 | 09:15 | `rq_bench` | 上一交易日 `rq_bench`（基准指数行情） |
-| 09:10 | `rq_swl2` | 上一交易日 `rq_daily_indusSWL2`（申万二级行业成分） |
+| 09:18 | `rq_daily_price` | 上一交易日 `rq_daily_price_none`（全市场不复权日线） |
+| 09:20 | `rq_quarterly` | 上一交易日 `rq_quarterly`（季报 PIT + ffill） |
+| 09:25 | `rq_yearly` | 上一交易日 `rq_yearly`（年报 PIT + ffill） |
+| 09:35 | `rq_minute` | 上一交易日 `rq_minute_none_YYYY`（全市场 1 分钟线，按年分表） |
 
 新增任务：在 `jobs/` 增加 `xxx.py`（实现 `run()` + `SCHEDULER_JOB_KEY`），在 `registry.py` 的 `_RUNNER_MAP` 注册，并在 `SCHEDULE_ENTRIES` 追加一行。
 
@@ -45,7 +51,10 @@ python scheduled_jobs/run_server.py --port 7331
 - `http://127.0.0.1:7331/run?job=rq_swl2` — 只跑申万二级行业成分
 - `http://127.0.0.1:7331/run?job=rq_swl2_price` — 只跑申万二级行业价量
 - `http://127.0.0.1:7331/run?job=rq_bench` — 只跑基准指数行情
-- `http://127.0.0.1:7331/run?job=rq_daily_price` — 只跑全市场日线价量（需在 schedule_config 中启用）
+- `http://127.0.0.1:7331/run?job=rq_quarterly` — 只跑季报
+- `http://127.0.0.1:7331/run?job=rq_yearly` — 只跑年报
+- `http://127.0.0.1:7331/run?job=rq_minute` — 只跑 1 分钟线
+- `http://127.0.0.1:7331/run?job=rq_daily_price` — 只跑全市场日线价量
 - 裸 `/run` **不会执行**任何任务
 
 邮件：根目录 `.env` 中 `ALPHA_NOTIFY_*`。
