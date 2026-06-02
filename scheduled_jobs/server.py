@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date
+from datetime import date, datetime, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -29,6 +29,69 @@ def _should_run_today(spec) -> bool:
     except Exception:
         logger.exception("判断交易日失败（mongo_alias={}）", alias)
         return False
+
+
+# rq_minute_backfill 业务窗口（与 backfill_rq_minute.py 一致）
+_MINUTE_BACKFILL_WINDOW_START = time(10, 0)
+_MINUTE_BACKFILL_WINDOW_END = time(14, 40)
+_STARTUP_CATCHUP_JOB_IDS = frozenset({"rq_minute_backfill"})
+
+
+def _in_minute_backfill_window(now: datetime | None = None) -> bool:
+    now = now or datetime.now()
+    t = now.time()
+    return _MINUTE_BACKFILL_WINDOW_START <= t <= _MINUTE_BACKFILL_WINDOW_END
+
+
+def _run_spec_background(
+    spec,
+    locks: dict[str, threading.Lock],
+    *,
+    notify: bool,
+    reason: str,
+) -> None:
+    def _bg() -> None:
+        lock = locks[spec.job_id]
+        if not lock.acquire(blocking=False):
+            logger.warning("{}：任务 {} 仍在执行，跳过", reason, spec.job_id)
+            return
+        try:
+            if not _should_run_today(spec):
+                logger.info("{}：任务 {} 今天不满足执行条件，跳过", reason, spec.job_id)
+                return
+            logger.info("{}：开始执行任务 {}", reason, spec.job_id)
+            run_job(spec, notify=notify)
+        finally:
+            lock.release()
+
+    threading.Thread(target=_bg, daemon=True).start()
+
+
+def _startup_catchup_window_jobs(
+    locks: dict[str, threading.Lock],
+    *,
+    notify: bool,
+) -> None:
+    """
+    服务启动时：若当前仍在任务业务窗口内，立即补跑一次（避免 10:00  cron 已过后重启不再执行）。
+    """
+    now = datetime.now()
+    for spec in JOB_REGISTRY:
+        if spec.job_id not in _STARTUP_CATCHUP_JOB_IDS:
+            continue
+        if spec.job_id == "rq_minute_backfill":
+            if not _in_minute_backfill_window(now):
+                logger.info(
+                    "rq_minute_backfill 将于今日 10:00 由 cron 触发（当前 {} 不在 10:00–14:40 窗口）",
+                    now.strftime("%H:%M:%S"),
+                )
+                continue
+            _run_spec_background(
+                spec,
+                locks,
+                notify=notify,
+                reason="启动补跑（处于 10:00–14:40 窗口）",
+            )
 
 
 def start_server(*, port: int = 7331, notify: bool = True) -> None:
@@ -73,6 +136,7 @@ def start_server(*, port: int = 7331, notify: bool = True) -> None:
             spec.description,
         )
     scheduler.start()
+    _startup_catchup_window_jobs(locks, notify=notify)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
