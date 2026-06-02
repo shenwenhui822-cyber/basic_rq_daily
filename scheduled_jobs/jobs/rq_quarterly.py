@@ -21,7 +21,8 @@ SCHEDULER_JOB_KEY = "rq_quarterly"
 def run() -> JobResult:
     from rq_paths import bootstrap
 
-    bootstrap(str(_ROOT / "bench_quarterly_yearly" / "MasterData" / "data_rq" / "update_daily_rq_quarterly.py"))
+    # 把 bench_quarterly_yearly 目录加入路径，使 MasterData 可作为顶层包导入
+    bootstrap(str(_ROOT / "bench_quarterly_yearly"))
 
     from MasterData.data_rq.update_rq_quarterly_yearly_bench import update_rq_quarterly
     from MasterData.data_rq.ffill_rq_quarterly_yearly_to_universe import ffill_fin_to_universe
