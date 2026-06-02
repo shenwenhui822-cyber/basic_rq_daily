@@ -30,7 +30,7 @@ def run() -> JobResult:
         _load_all_trade_days_sorted,
         _trade_days_in_sorted,
     )
-    from trade_date_utils import is_trade_day, previous_trade_date, _next_trade_day
+    from trade_date_utils import is_trade_day, previous_trade_date
     from usedbdef import get_client
 
     run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

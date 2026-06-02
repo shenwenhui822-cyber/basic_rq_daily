@@ -157,7 +157,7 @@ ensure_port_free() {
 start_server() {
     echo "[INFO] 启动 basic_rq 定时任务服务 (Port: $PORT)..."
     echo "[INFO] 计划任务见 scheduled_jobs/jobs/schedule_config.py"
-    echo "[INFO] 健康检查: http://<服务器IP>:${PORT}/health"
+    echo "[INFO] 健康检查: http://192.168.110.199:${PORT}/health"
     nohup "$PY_CMD" main.py --port "$PORT" >> "$LOG_FILE" 2>&1 &
     local pid=$!
     sleep 1
