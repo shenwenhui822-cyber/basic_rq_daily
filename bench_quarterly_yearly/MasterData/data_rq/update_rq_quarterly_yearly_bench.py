@@ -253,12 +253,13 @@ def update_rq_quarterly(
     mongo_db: str = "basic_rq",
     base_coll: str = "rq_base_info",
     target_coll: str = "rq_quarterly",
-) -> bool:
+) -> tuple[bool, int]:
+    """返回 (是否成功, 实际写入行数)。"""
     pre_trade_day = _norm_day(pre_trade_day)
     today = _norm_day(today)
     if pre_trade_day >= today:
         print("❌ pre_trade_day 应小于 today")
-        return False
+        return False, 0
 
     client = get_client(mongo_alias)
     base = client[mongo_db][base_coll]
@@ -267,13 +268,13 @@ def update_rq_quarterly(
     codes = _load_codes_from_base(base, pre_trade_day)
     if not codes:
         print("❌ rq_base_info 无当日 code_rq，请先更新 rq_base_info")
-        return False
+        return False, 0
 
     latest_report, last_report, last_last_report, _, _ = _season_params(today, pre_trade_day)
     df = _merge_quarterly_cohorts(codes, latest_report, last_report, last_last_report, pre_trade_day)
     if df.empty:
         print("❌ 季报数据为空")
-        return False
+        return False, 0
 
     df["date"] = pre_trade_day
     if "minority_int" in df.columns:
@@ -427,7 +428,8 @@ def update_rq_yearly(
     base_coll: str = "rq_base_info",
     target_coll: str = "rq_yearly",
     chunk_size: int = 800,
-) -> bool:
+) -> tuple[bool, int]:
+    """返回 (是否成功, 实际写入行数)。"""
     pre_trade_day = _norm_day(pre_trade_day)
     today = _norm_day(today)
     _, _, _, latest_year, last_year = _season_params(today, pre_trade_day)
@@ -446,7 +448,7 @@ def update_rq_yearly(
     print(f"[timing] query_base_info: {time.perf_counter() - t_query:.2f}s")
     if not codes:
         print("❌ rq_base_info 无当日 code_rq")
-        return False
+        return False, 0
 
     def _one_year(chunk: list[str], yq: str) -> pd.DataFrame:
         tax = _pit_yearly_tax(chunk, yq, pre_trade_day)
@@ -470,11 +472,11 @@ def update_rq_yearly(
     nonempty = [p for p in parts if not p.empty]
     if not nonempty:
         print("❌ 年报数据为空")
-        return False
+        return False, 0
     df = pd.concat(nonempty, ignore_index=True)
     if df.empty:
         print("❌ 年报数据为空")
-        return False
+        return False, 0
 
     if "stm_issuingdate" in df.columns:
         ok = df["stm_issuingdate"].map(_disclosure_ok)
@@ -521,7 +523,7 @@ def update_rq_yearly(
         table.delete_many({"date": dv})
     table.insert_many(df.to_dict("records"), ordered=False)
     print(f"✅ {target_coll} 写入 {len(df)} 条 (date={pre_trade_day})")
-    return True
+    return True, len(df)
 
 
 def create_indexes_rq_financial_extensions(

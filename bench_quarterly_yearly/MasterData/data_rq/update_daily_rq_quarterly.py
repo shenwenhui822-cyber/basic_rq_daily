@@ -211,7 +211,7 @@ def main() -> None:
         except Exception as e:
             print(f"索引处理提示（可忽略）: {e}")
 
-    ok = update_rq_quarterly(
+    ok, _rows = update_rq_quarterly(
         pre_trade_day,
         today_for_update,
         mongo_alias=args.mongo_alias,

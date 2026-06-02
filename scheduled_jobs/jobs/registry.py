@@ -24,8 +24,10 @@ def _ensure_runner_map() -> None:
         rq_bench,
         rq_daily_price,
         rq_in_index,
+        rq_quarterly,
         rq_swl2,
         rq_swl2_price,
+        rq_yearly,
     )
 
     _RUNNER_MAP.update(
@@ -57,6 +59,14 @@ def _ensure_runner_map() -> None:
             rq_bench.SCHEDULER_JOB_KEY: (
                 rq_bench.run,
                 "rq_bench：交易日更新上一交易日基准指数行情",
+            ),
+            rq_quarterly.SCHEDULER_JOB_KEY: (
+                rq_quarterly.run,
+                "rq_quarterly：交易日 9:20 更新上一交易日季报（含 backfill 统计）",
+            ),
+            rq_yearly.SCHEDULER_JOB_KEY: (
+                rq_yearly.run,
+                "rq_yearly：交易日 9:25 更新上一交易日年报（含 backfill 统计）",
             ),
         }
     )
