@@ -8,12 +8,30 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _DEFAULT_MONGO_ALIAS = os.environ.get("MONGO_TRADE_ALIAS", "local")
+
+
+def now_shanghai() -> datetime:
+    """当前时刻（Asia/Shanghai，与 APScheduler cron 一致）。"""
+    return datetime.now(SHANGHAI_TZ)
+
+
+def today_shanghai() -> date:
+    return now_shanghai().date()
+
+
+def as_shanghai(dt: datetime) -> datetime:
+    """转为 Asia/Shanghai aware datetime。"""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=SHANGHAI_TZ)
+    return dt.astimezone(SHANGHAI_TZ)
 
 
 def norm_trade_date_str(s: str) -> str:

@@ -329,8 +329,12 @@ def run_minute_range_to_mongo(
     grouped = list(df_keys.groupby("date", sort=True))
 
     for trade_date, g in grouped:
-        if deadline is not None and datetime.now() >= deadline:
-            print(f"{prefix}已达截止时间 {deadline.strftime('%H:%M')}，暂停")
+        from trade_date_utils import now_shanghai
+
+        if deadline is not None and now_shanghai() >= deadline:
+            print(
+                f"{prefix}已达截止时间 {deadline.strftime('%H:%M')} (Asia/Shanghai)，暂停"
+            )
             return {
                 "ok_days": ok_days,
                 "total_days": total_days,

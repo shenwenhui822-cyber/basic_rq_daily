@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +16,7 @@ for _p in (_ROOT, _ROOT / "lib", _MINUTE_DIR):
 
 from scheduled_jobs.config import mongo_trade_alias
 from scheduled_jobs.jobs.base import JobResult
+from trade_date_utils import now_shanghai
 
 SCHEDULER_JOB_KEY = "rq_minute_backfill"
 
@@ -37,7 +37,7 @@ def run() -> JobResult:
         start=start or DEFAULT_BACKFILL_START,
         enforce_window=not force,
         skip_existing=True,
-        now=datetime.now(),
+        now=now_shanghai(),
     )
 
     return JobResult(

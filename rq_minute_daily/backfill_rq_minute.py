@@ -22,7 +22,13 @@ for _p in (_PKG_ROOT, _PKG_DIR):
         sys.path.remove(_s)
     sys.path.insert(0, _s)
 
-from trade_date_utils import list_trade_dates, norm_trade_date_str, previous_trade_date
+from trade_date_utils import (
+    as_shanghai,
+    list_trade_dates,
+    norm_trade_date_str,
+    now_shanghai,
+    previous_trade_date,
+)
 from usedbdef import DEFAULT_MONGO_ALIAS, get_client
 
 from minute_mongo import MINUTE_DB, find_latest_minute_trade_date
@@ -34,16 +40,18 @@ DATE_FMT_DB = "%Y-%m-%d"
 
 
 def in_backfill_time_window(now: datetime | None = None) -> bool:
-    """是否在 10:00–14:40 补数窗口内。"""
-    now = now or datetime.now()
+    """是否在 10:00–14:40 补数窗口内（Asia/Shanghai）。"""
+    now = as_shanghai(now or now_shanghai())
     t = now.time()
     return BACKFILL_WINDOW_START <= t <= BACKFILL_WINDOW_END
 
 
 def backfill_deadline_today(now: datetime | None = None) -> datetime:
-    """当日 14:40 截止时刻。"""
-    now = now or datetime.now()
-    return datetime.combine(now.date(), BACKFILL_WINDOW_END)
+    """当日 14:40 截止时刻（Asia/Shanghai）。"""
+    from trade_date_utils import SHANGHAI_TZ
+
+    now = as_shanghai(now or now_shanghai())
+    return datetime.combine(now.date(), BACKFILL_WINDOW_END, tzinfo=SHANGHAI_TZ)
 
 
 def iter_month_segments(start_s: str, end_s: str):
@@ -109,14 +117,17 @@ def run_minute_monthly_backfill(
     """
     from rq_getRangeMinPrice import log_rq_quota_status, run_minute_range_to_mongo
 
-    now = now or datetime.now()
+    now = as_shanghai(now or now_shanghai())
     run_at = now.strftime("%Y-%m-%d %H:%M:%S")
 
     if enforce_window and not in_backfill_time_window(now):
         return {
             "ok": True,
             "skipped": True,
-            "message": f"当前 {now.strftime('%H:%M')} 不在补数窗口 10:00–14:40，已跳过",
+            "message": (
+                f"当前 {now.strftime('%H:%M')} (Asia/Shanghai) "
+                f"不在补数窗口 10:00–14:40，已跳过"
+            ),
             "run_at": run_at,
         }
 
@@ -150,7 +161,7 @@ def run_minute_monthly_backfill(
     months_done = 0
 
     for m_idx, (m_start, m_end, month_label) in enumerate(months, start=1):
-        if datetime.now() >= deadline:
+        if now_shanghai() >= deadline:
             msg = (
                 f"已达 14:40 截止；anchor={anchor} | "
                 f"本月进度 {months_done}/{len(months)} 月 | "

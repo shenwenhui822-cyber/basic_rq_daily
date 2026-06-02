@@ -17,7 +17,7 @@ from scheduled_jobs.config import mongo_trade_alias
 from scheduled_jobs.jobs.registry import JOB_REGISTRY, resolve_run_targets, run_job
 from scheduled_jobs.notify.email import notify_configured
 from scheduled_jobs.notify.rq_logs import ensure_rq_logs_indexes
-from trade_date_utils import is_trade_day
+from trade_date_utils import is_trade_day, now_shanghai
 
 
 def _should_run_today(spec) -> bool:
@@ -38,7 +38,9 @@ _STARTUP_CATCHUP_JOB_IDS = frozenset({"rq_minute_backfill"})
 
 
 def _in_minute_backfill_window(now: datetime | None = None) -> bool:
-    now = now or datetime.now()
+    from trade_date_utils import as_shanghai
+
+    now = as_shanghai(now or now_shanghai())
     t = now.time()
     return _MINUTE_BACKFILL_WINDOW_START <= t <= _MINUTE_BACKFILL_WINDOW_END
 
@@ -75,14 +77,15 @@ def _startup_catchup_window_jobs(
     """
     服务启动时：若当前仍在任务业务窗口内，立即补跑一次（避免 10:00  cron 已过后重启不再执行）。
     """
-    now = datetime.now()
+    now = now_shanghai()
     for spec in JOB_REGISTRY:
         if spec.job_id not in _STARTUP_CATCHUP_JOB_IDS:
             continue
         if spec.job_id == "rq_minute_backfill":
             if not _in_minute_backfill_window(now):
                 logger.info(
-                    "rq_minute_backfill 将于今日 10:00 由 cron 触发（当前 {} 不在 10:00–14:40 窗口）",
+                    "rq_minute_backfill 将于今日 10:00 (Asia/Shanghai) 由 cron 触发"
+                    "（当前 {} 不在 10:00–14:40 窗口）",
                     now.strftime("%H:%M:%S"),
                 )
                 continue
