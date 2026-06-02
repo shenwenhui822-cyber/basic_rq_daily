@@ -25,6 +25,7 @@ def _ensure_runner_map() -> None:
         rq_daily_price,
         rq_in_index,
         rq_minute,
+        rq_minute_backfill,
         rq_quarterly,
         rq_swl2,
         rq_swl2_price,
@@ -72,6 +73,10 @@ def _ensure_runner_map() -> None:
             rq_minute.SCHEDULER_JOB_KEY: (
                 rq_minute.run,
                 "rq_minute_none：交易日 9:35 更新上一交易日全市场 1 分钟线（依赖 rq_base_info）",
+            ),
+            rq_minute_backfill.SCHEDULER_JOB_KEY: (
+                rq_minute_backfill.run,
+                "rq_minute_none：10:00 起在 14:40 前按自然月倒序批量补历史分钟线",
             ),
         }
     )
@@ -121,17 +126,23 @@ def _build_registry() -> list[JobSpec]:
         if job_key not in _RUNNER_MAP:
             raise ValueError(f"未注册 runner: {job_key!r}（任务 {task_name!r}）")
         runner, description = _RUNNER_MAP[job_key]
-        hour, minute = parse_hhmm(hhmm)
+        if "cron_hour" in opts and "cron_minute" in opts:
+            hour, minute = opts["cron_hour"], opts["cron_minute"]
+            schedule_time = str(opts.get("schedule_time", hhmm))
+        else:
+            hour, minute = parse_hhmm(hhmm)
+            schedule_time = hhmm
+        only_on_trade_day = bool(opts.get("only_on_trade_day", True))
         specs.append(
             JobSpec(
                 job_id=job_key,
                 task_name=task_name,
                 description=description,
-                schedule_time=hhmm,
+                schedule_time=schedule_time,
                 cron_hour=hour,
                 cron_minute=minute,
                 runner=runner,
-                only_on_trade_day=True,
+                only_on_trade_day=only_on_trade_day,
             )
         )
     return specs

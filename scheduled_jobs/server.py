@@ -97,7 +97,7 @@ def start_server(*, port: int = 7331, notify: bool = True) -> None:
                         "job_id": s.job_id,
                         "task_name": s.task_name,
                         "schedule_time": s.schedule_time,
-                        "cron": f"{s.cron_hour:02d}:{s.cron_minute:02d}",
+                        "cron": f"{s.cron_hour}:{s.cron_minute}",
                         "description": s.description,
                         "only_on_trade_day": s.only_on_trade_day,
                     }

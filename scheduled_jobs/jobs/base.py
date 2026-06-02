@@ -34,8 +34,8 @@ class JobSpec:
     description: str
     schedule_time: str
     """计划触发时刻，如 09:05。"""
-    cron_hour: int
-    cron_minute: int
+    cron_hour: int | str
+    cron_minute: int | str
     runner: JobCallable
     task_name: str = ""
     """schedule_config 中的任务显示名。"""

@@ -255,6 +255,10 @@ def update_rqMinPrice(
     base_table = client[base_db][base_collection]
     minute_table = client[minute_db][minute_collection]
 
+    from minute_mongo import ensure_minute_collection_indexes
+
+    ensure_minute_collection_indexes(minute_table)
+
     try:
         codes = _load_today_base_info_codes(table=base_table, today_str=today_str)
     except Exception as e:

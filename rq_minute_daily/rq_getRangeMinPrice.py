@@ -11,6 +11,8 @@ from __future__ import annotations
 import io
 import os
 import sys
+from datetime import datetime
+from typing import Any
 
 
 def _configure_windows_stdio() -> None:
@@ -57,9 +59,13 @@ _configure_windows_stdio()
 
 from pathlib import Path
 
-_script_dir = str(Path(__file__).resolve().parent)
-if _script_dir not in sys.path:
-    sys.path.insert(0, _script_dir)
+_script_dir = Path(__file__).resolve().parent
+_root_dir = _script_dir.parent
+for _p in (_root_dir, _script_dir):
+    _s = str(_p)
+    if _s in sys.path:
+        sys.path.remove(_s)
+    sys.path.insert(0, _s)
 
 import argparse
 import time
@@ -225,6 +231,165 @@ def minute_panel_to_mongo_df(df: pd.DataFrame) -> pd.DataFrame:
     return out[cols].sort_values(by=["date", "time", "code_rq"])
 
 
+def is_rq_quota_exceeded(fraction: float = QUOTA_STOP_FRACTION) -> bool:
+    q = rq.user.get_quota()
+    used = int(q.get("bytes_used", 0) or 0)
+    limit = int(q.get("bytes_limit", 0) or 0)
+    if limit <= 0:
+        return False
+    return used >= fraction * limit
+
+
+def fetch_range_base_info_from_mongo(
+    client,
+    start_date: str,
+    end_date: str,
+    *,
+    base_db: str = "basic_rq",
+    base_collection: str = "rq_base_info",
+) -> pd.DataFrame:
+    """从 ``basic_rq.rq_base_info`` 读取区间 lookup（basic_rq 已就绪时用）。"""
+    start_s = resolve_cn_trade_date(start_date)
+    end_s = resolve_cn_trade_date(end_date)
+    table = client[base_db][base_collection]
+    cursor = table.find(
+        {"date": {"$gte": start_s, "$lte": end_s}},
+        {"_id": 0, "date": 1, "code": 1, "code_rq": 1},
+    )
+    df = pd.DataFrame(list(cursor))
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(DATE_FMT_MONGO_DAY)
+    cols = [c for c in ("date", "code", "code_rq") if c in df.columns]
+    return df[cols].dropna(subset=["date", "code_rq"]).drop_duplicates()
+
+
+def run_minute_range_to_mongo(
+    start_date: str,
+    end_date: str,
+    *,
+    mongo_alias: str = DEFAULT_MONGO_ALIAS,
+    chunk_size: int = MAX_IDS_PER_MINUTE_REQUEST,
+    no_mongo: bool = False,
+    skip_existing: bool = False,
+    deadline: datetime | None = None,
+    use_mongo_base_info: bool = True,
+    month_label: str = "",
+) -> dict[str, Any]:
+    """
+    区间 1m 落库（供定时补数 / CLI 调用）。
+
+    Returns:
+        ok_days, total_days, skipped_days, stopped_by_deadline, stopped_by_quota
+    """
+    from minute_mongo import minute_day_has_data
+
+    start_s = resolve_cn_trade_date(start_date)
+    end_s = resolve_cn_trade_date(end_date)
+    prefix = f"{month_label} " if month_label else ""
+    print(f"\n=== {prefix}分钟区间 {start_s} ~ {end_s} ===")
+
+    if is_rq_quota_exceeded():
+        print(f"{prefix}RQ 配额已达阈值，中止本段")
+        return {
+            "ok_days": 0,
+            "total_days": 0,
+            "skipped_days": 0,
+            "stopped_by_deadline": False,
+            "stopped_by_quota": True,
+        }
+
+    client = get_client(mongo_alias)
+    if use_mongo_base_info:
+        df_base = fetch_range_base_info_from_mongo(client, start_s, end_s)
+        if df_base.empty:
+            print(f"{prefix}Mongo rq_base_info 无数据，回退 RQ 拉基础表")
+            check_rq_quota_or_exit(label=f"{prefix}拉基础表前")
+            df_base = fetch_range_base_info(start_s, end_s)
+    else:
+        check_rq_quota_or_exit(label=f"{prefix}拉基础表前")
+        df_base = fetch_range_base_info(start_s, end_s)
+
+    if df_base.empty:
+        print(f"{prefix}无基础 lookup，跳过")
+        return {
+            "ok_days": 0,
+            "total_days": 0,
+            "skipped_days": 0,
+            "stopped_by_deadline": False,
+            "stopped_by_quota": False,
+        }
+
+    df_keys = to_price_lookup_df(df_base)
+    print(f"{prefix}lookup 行数: {len(df_keys)}")
+
+    ok_days = 0
+    total_days = 0
+    skipped_days = 0
+    grouped = list(df_keys.groupby("date", sort=True))
+
+    for trade_date, g in grouped:
+        if deadline is not None and datetime.now() >= deadline:
+            print(f"{prefix}已达截止时间 {deadline.strftime('%H:%M')}，暂停")
+            return {
+                "ok_days": ok_days,
+                "total_days": total_days,
+                "skipped_days": skipped_days,
+                "stopped_by_deadline": True,
+                "stopped_by_quota": False,
+            }
+
+        key = resolve_cn_trade_date(str(trade_date))
+        total_days += 1
+
+        if skip_existing and minute_day_has_data(client, key, minute_db=MONGO_DB):
+            print(f"  跳过已有 {key}")
+            skipped_days += 1
+            continue
+
+        ids = g["code_rq"].tolist()
+        print(f"\n>>> {prefix}交易日 {key}，标的 {len(ids)} 只，拉 1m…")
+
+        if is_rq_quota_exceeded():
+            print(f"{prefix}RQ 配额已达阈值，中止")
+            return {
+                "ok_days": ok_days,
+                "total_days": total_days,
+                "skipped_days": skipped_days,
+                "stopped_by_deadline": False,
+                "stopped_by_quota": True,
+            }
+
+        merged, _fields = fetch_one_trade_day_1m_all(ids, key, chunk_size=chunk_size)
+        mongo_df = minute_panel_to_mongo_df(merged)
+        if mongo_df.empty:
+            print(f"  [!] {key} 转长表为空，跳过入库")
+            log_rq_quota_status(f"{key} 结束后")
+            continue
+
+        date_db = mongo_df["date"].iloc[0]
+        log_rq_quota_status(f"{key} 结束后")
+
+        if no_mongo:
+            ok_days += 1
+            continue
+
+        save_minute_day_to_mongo(
+            mongo_df,
+            mongo_alias=mongo_alias,
+            date_for_delete=date_db,
+        )
+        ok_days += 1
+
+    return {
+        "ok_days": ok_days,
+        "total_days": total_days,
+        "skipped_days": skipped_days,
+        "stopped_by_deadline": False,
+        "stopped_by_quota": False,
+    }
+
+
 def save_minute_day_to_mongo(
     mongo_df: pd.DataFrame,
     *,
@@ -239,6 +404,10 @@ def save_minute_day_to_mongo(
     client = get_client(mongo_alias)
     mongo_collection = minute_collection_for_date(date_for_delete)
     table = client[MONGO_DB][mongo_collection]
+
+    from minute_mongo import ensure_minute_collection_indexes
+
+    ensure_minute_collection_indexes(table)
     print(f"\n=== 写入 MongoDB {MONGO_DB}.{mongo_collection} ({mongo_alias}) ===")
 
     mongo_df = _df_nan_to_none(mongo_df)
@@ -289,47 +458,19 @@ def main(
 
     print(f"总区间: {start_s} ~ {end_s}")
     log_rq_quota_status("任务开始")
-    check_rq_quota_or_exit(label="拉基础表前")
 
-    df_base = fetch_range_base_info(start_s, end_s)
-    if df_base.empty:
-        print("无基础数据，结束。")
-        return
-
-    df_keys = to_price_lookup_df(df_base)
-    print(f"\nlookup 行数: {len(df_keys)}")
-
-    for trade_date, g in df_keys.groupby("date", sort=True):
-        key = str(trade_date)
-        ids = g["code_rq"].tolist()
-        print(f"\n>>> 交易日 {key}，标的 {len(ids)} 只，拉 1m…")
-
-        check_rq_quota_or_exit(label=f"{key} 拉分钟前")
-        merged, _fields = fetch_one_trade_day_1m_all(
-            ids, key, chunk_size=args.chunk_size
-        )
-        print(f"  合并后面板行数: {len(merged)}, 列: {merged.shape[1] if not merged.empty else 0}")
-
-        mongo_df = minute_panel_to_mongo_df(merged)
-        if mongo_df.empty:
-            print(f"  [!] {key} 转长表为空，跳过入库")
-            log_rq_quota_status(f"{key} 结束后")
-            continue
-
-        date_db = mongo_df["date"].iloc[0]
-        log_rq_quota_status(f"{key} 结束后")
-
-        if args.no_mongo:
-            print("  --no-mongo，跳过写入")
-            continue
-
-        save_minute_day_to_mongo(
-            mongo_df,
-            mongo_alias=args.mongo_alias,
-            date_for_delete=date_db,
-        )
-
-    print("\n[OK] 分钟区间任务结束。")
+    stats = run_minute_range_to_mongo(
+        start_s,
+        end_s,
+        mongo_alias=args.mongo_alias,
+        chunk_size=args.chunk_size,
+        no_mongo=args.no_mongo,
+        use_mongo_base_info=False,
+    )
+    print(
+        f"\n[OK] 分钟区间任务结束：写入 {stats['ok_days']}/{stats['total_days']} 日"
+        f"（跳过已有 {stats['skipped_days']} 日）"
+    )
     log_rq_quota_status("全部结束")
 
 

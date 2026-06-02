@@ -27,6 +27,7 @@ SCHEDULE_ENTRIES = [
 | 09:20 | `rq_quarterly` | 上一交易日 `rq_quarterly`（季报 PIT + ffill） |
 | 09:25 | `rq_yearly` | 上一交易日 `rq_yearly`（年报 PIT + ffill） |
 | 09:35 | `rq_minute` | 上一交易日 `rq_minute_none_YYYY`（全市场 1 分钟线，按年分表） |
+| 10:00 | `rq_minute_backfill` | 10:00 起至 14:40 按月倒序批量补历史分钟线 |
 
 新增任务：在 `jobs/` 增加 `xxx.py`（实现 `run()` + `SCHEDULER_JOB_KEY`），在 `registry.py` 的 `_RUNNER_MAP` 注册，并在 `SCHEDULE_ENTRIES` 追加一行。
 
@@ -54,6 +55,7 @@ python scheduled_jobs/run_server.py --port 7331
 - `http://127.0.0.1:7331/run?job=rq_quarterly` — 只跑季报
 - `http://127.0.0.1:7331/run?job=rq_yearly` — 只跑年报
 - `http://127.0.0.1:7331/run?job=rq_minute` — 只跑 1 分钟线
+- `http://127.0.0.1:7331/run?job=rq_minute_backfill` — 倒序补 1 日历史分钟线
 - `http://127.0.0.1:7331/run?job=rq_daily_price` — 只跑全市场日线价量
 - 裸 `/run` **不会执行**任何任务
 

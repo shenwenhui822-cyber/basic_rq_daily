@@ -88,3 +88,19 @@ def mongo_trade_date_range(start: str, end: str) -> dict[str, str]:
     """Mongo ``economic.trade_dates`` 查询用 ``{'$gte': ..., '$lte': ...}``。"""
     start_s, end_s = parse_start_end_range(start, end)
     return {"$gte": start_s, "$lte": end_s}
+
+
+def list_trade_dates(
+    start: str,
+    end: str,
+    *,
+    mongo_alias: str = _DEFAULT_MONGO_ALIAS,
+    client: Any | None = None,
+) -> list[str]:
+    """返回 ``[start, end]`` 内全部交易日（升序，``YYYY-MM-DD``）。"""
+    c = _get_client(mongo_alias, client)
+    cursor = c.economic.trade_dates.find(
+        {"trade_date": mongo_trade_date_range(start, end)},
+        {"_id": 0, "trade_date": 1},
+    ).sort("trade_date", 1)
+    return [norm_trade_date_str(d["trade_date"]) for d in cursor]
