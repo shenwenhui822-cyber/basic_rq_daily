@@ -18,12 +18,17 @@ import pandas as pd
 import pymongo
 import rqdatac as rq
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
+_PKG_DIR = Path(__file__).resolve().parent
+_PKG_ROOT = _PKG_DIR.parent
+for _p in (_PKG_ROOT, _PKG_DIR):
+    _s = str(_p)
+    if _s in sys.path:
+        sys.path.remove(_s)
+    sys.path.insert(0, _s)
 
 from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 from usedbdef import DEFAULT_MONGO_ALIAS, get_client
+from minute_mongo import MINUTE_DB, minute_collection_for_date
 
 
 MINUTE_PRICE_FIELDS = [
@@ -224,14 +229,19 @@ def update_rqMinPrice(
     mongo_alias: str = DEFAULT_MONGO_ALIAS,
     base_db: str = "basic_rq",
     base_collection: str = "rq_base_info",
-    minute_db: str = "rq_minute",
-    minute_collection: str = "rq_minute_none_2025",
+    minute_db: str = MINUTE_DB,
+    minute_collection: str | None = None,
 ) -> bool:
     """
     每日更新 1 分钟行情。
     注意：该函数要求当天 rq_base_info 已提前更新。
+    minute_collection 未指定时，按 today_str 年份写入 rq_minute_none_YYYY。
     """
+    if not minute_collection:
+        minute_collection = minute_collection_for_date(today_str)
+
     print(f"\n=== 开始更新 1 分钟行情，日期：{today_str} ===")
+    print(f"目标集合：{minute_db}.{minute_collection}")
 
     client = get_client(mongo_alias)
     if not is_trade_day(today_str, client=client):
@@ -278,6 +288,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="更新 rq 分钟行情")
     p.add_argument("--date", "-d", default=None, help="目标交易日；默认 T-1")
     p.add_argument("--mongo-alias", default=DEFAULT_MONGO_ALIAS)
+    p.add_argument(
+        "--collection",
+        default=None,
+        help="指定集合名；默认按 --date 年份自动 rq_minute_none_YYYY",
+    )
     cli = p.parse_args()
     today_str = (
         parse_explicit_date_arg(cli.date, fmt="%Y/%m/%d")
@@ -290,8 +305,8 @@ if __name__ == "__main__":
         mongo_alias=cli.mongo_alias,
         base_db="basic_rq",
         base_collection="rq_base_info",
-        minute_db="rq_minute",
-        minute_collection="rq_minute_none_2025",
+        minute_db=MINUTE_DB,
+        minute_collection=cli.collection,
     )
 
     if result:

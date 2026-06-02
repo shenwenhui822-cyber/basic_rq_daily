@@ -3,7 +3,7 @@
 拉数使用 get_Min1Test1 的 get_price 1m 与字段降级策略。
 
 ⚠️ 分钟线数据量远大于日线，务必关注 RQ 配额；本脚本默认短区间 + 分批 + 多处配额检查。
-落库：MongoDB ``rq_minute.rq_minute_none_2024``；每条文档含字符串 ``date``（``YYYY-MM-DD``）与 ``time``（``HH:MM:SS``）。
+落库：MongoDB ``rq_minute.rq_minute_none_YYYY``（按交易日年份自动分表）；每条文档含字符串 ``date``（``YYYY-MM-DD``）与 ``time``（``HH:MM:SS``）。
 """
 
 from __future__ import annotations
@@ -84,14 +84,14 @@ from rq_getRangeDailyPrice import (
     _rq_code_to_display,
 )
 from usedbdef import DEFAULT_MONGO_ALIAS, get_client, insert_db_from_df
+from minute_mongo import MINUTE_DB, minute_collection_for_date
 
 # 分钟线单次请求标的数（小于日线 2000，降低单次 payload）
 MAX_IDS_PER_MINUTE_REQUEST = 600
 
 QUOTA_STOP_FRACTION = 0.6
 
-MONGO_DB = "rq_minute"
-MONGO_COLLECTION = "rq_minute_none_2024"
+MONGO_DB = MINUTE_DB
 
 # 入库日期/时间字符串格式（与业务示例一致：date="2025-04-28", time="10:37:00"）
 DATE_FMT_MONGO_DAY = "%Y-%m-%d"
@@ -237,8 +237,9 @@ def save_minute_day_to_mongo(
         return
 
     client = get_client(mongo_alias)
-    table = client[MONGO_DB][MONGO_COLLECTION]
-    print(f"\n=== 写入 MongoDB {MONGO_DB}.{MONGO_COLLECTION} ({mongo_alias}) ===")
+    mongo_collection = minute_collection_for_date(date_for_delete)
+    table = client[MONGO_DB][mongo_collection]
+    print(f"\n=== 写入 MongoDB {MONGO_DB}.{mongo_collection} ({mongo_alias}) ===")
 
     mongo_df = _df_nan_to_none(mongo_df)
     if delete_before_insert:
@@ -264,7 +265,7 @@ def main(
     end_date: str,
     single_day: str | None = None,
 ) -> None:
-    parser = argparse.ArgumentParser(description="区间 1 分钟线 → rq_minute.rq_minute_none_2024")
+    parser = argparse.ArgumentParser(description="区间 1 分钟线 → rq_minute.rq_minute_none_YYYY")
     parser.add_argument("--no-mongo", action="store_true", help="不落库")
     parser.add_argument(
         "--mongo-alias",

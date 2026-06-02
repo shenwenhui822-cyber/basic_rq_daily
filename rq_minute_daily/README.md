@@ -12,8 +12,8 @@
 |------|------|
 | `run_minute_daily.bat` | 先 `update_rqbaseInfo` 再 `update_rqMinPrice`（改 `PYTHON=`） |
 | `update_rqbaseInfo.py` | 写入 `basic_rq.rq_base_info`（分钟脚本读当日 `code_rq`） |
-| `update_rqMinPrice.py` | 单日全市场 1m → 默认 **`rq_minute.rq_minute_none_2025`** |
-| `rq_getRangeMinPrice.py` | 区间 1m，集合默认见脚本内 `MONGO_COLLECTION`（常为 `rq_minute_none_2024`） |
+| `update_rqMinPrice.py` | 单日全市场 1m → **`rq_minute.rq_minute_none_YYYY`**（按数据日年份自动分表） |
+| `rq_getRangeMinPrice.py` | 区间 1m，同样按交易日年份写入 `rq_minute_none_YYYY` |
 | `rq_getRangeDailyPrice.py` | 被区间分钟引用（lookup `date`+`code_rq`） |
 | `get_Min1Test1.py` / `get_dayDataTest1.py` | 分钟拉数与字段辅助 |
 | `usedbdef.py` | `get_client` / `insert_db_from_df`（连接读上级 **`../mongo_connect.py`**） |

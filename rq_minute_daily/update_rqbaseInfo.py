@@ -16,9 +16,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from loguru import logger
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
+_PKG_DIR = Path(__file__).resolve().parent
+_PKG_ROOT = _PKG_DIR.parent
+for _p in (_PKG_ROOT, _PKG_DIR):
+    _s = str(_p)
+    if _s in sys.path:
+        sys.path.remove(_s)
+    sys.path.insert(0, _s)
 
 from trade_date_utils import is_trade_day, parse_explicit_date_arg, previous_trade_date
 from usedbdef import DEFAULT_MONGO_ALIAS, get_client, insert_db_from_df
