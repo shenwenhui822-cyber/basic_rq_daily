@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import pymongo
 import rqdatac as rq
@@ -31,6 +30,7 @@ from rq_paths import bootstrap
 
 bootstrap(__file__)
 
+from rq_bench_format import prepare_bench_row_for_mongo
 from trade_date_utils import mongo_trade_date_range, parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client
 
@@ -69,10 +69,6 @@ def day_variants(s: str) -> list[str]:
     s = norm_bench_day(s)
     y, m, d = s.split("-")
     return list(dict.fromkeys([s, f"{y}/{m}/{d}"]))
-
-
-def df_nan_to_none(df: pd.DataFrame) -> pd.DataFrame:
-    return df.replace({np.nan: None})
 
 
 def rq_close_series(rq_id: str, end_day: str, lookback_days: int = 45) -> pd.Series | None:
@@ -132,7 +128,7 @@ def bench_row(wind_code: str, rq_id: str, day: str) -> dict[str, Any]:
             "code_rq": rq_id,
             "rq_index_code": rq_index_code,
             "rq_bench_substitute": rq_bench_substitute,
-            "pct_chg": format(pct, ".14f") if pct is not None else None,
+            "pct_chg": pct,
             "volume": vol / 1_000_000,
             "amt": amt,
             "pre_close": pre_close,
@@ -185,7 +181,7 @@ def update_rq_bench(
     for wind_code, rq_id in BENCH_WIND_TO_RQ:
         r = bench_row(wind_code, rq_id, pre_trade_day)
         if r:
-            rows.append(df_nan_to_none(pd.DataFrame([r])).to_dict("records")[0])
+            rows.append(prepare_bench_row_for_mongo(r))
 
     if not rows:
         print("基准数据为空")
