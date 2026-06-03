@@ -272,12 +272,15 @@ def run_minute_range_to_mongo(
     chunk_size: int = MAX_IDS_PER_MINUTE_REQUEST,
     no_mongo: bool = False,
     skip_existing: bool = False,
+    reverse_dates: bool = False,
     deadline: datetime | None = None,
     use_mongo_base_info: bool = True,
     month_label: str = "",
 ) -> dict[str, Any]:
     """
     区间 1m 落库（供定时补数 / CLI 调用）。
+
+    reverse_dates=True 时同一自然月内按交易日倒序（离 anchor 近的日期优先）。
 
     Returns:
         ok_days, total_days, skipped_days, stopped_by_deadline, stopped_by_quota
@@ -327,6 +330,8 @@ def run_minute_range_to_mongo(
     total_days = 0
     skipped_days = 0
     grouped = list(df_keys.groupby("date", sort=True))
+    if reverse_dates:
+        grouped.reverse()
 
     for trade_date, g in grouped:
         from trade_date_utils import now_shanghai

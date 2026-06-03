@@ -113,7 +113,7 @@ def run_minute_monthly_backfill(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """
-    在 10:00–14:40 内按自然月倒序持续批量落库，直到截止或历史补齐。
+    在 10:00–14:40 内按自然月倒序、月内交易日倒序持续批量落库，直到截止或历史补齐。
     """
     from rq_getRangeMinPrice import log_rq_quota_status, run_minute_range_to_mongo
 
@@ -189,6 +189,7 @@ def run_minute_monthly_backfill(
             m_end,
             mongo_alias=mongo_alias,
             skip_existing=skip_existing,
+            reverse_dates=True,
             deadline=deadline,
             use_mongo_base_info=True,
             month_label=month_label,
