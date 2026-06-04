@@ -296,6 +296,12 @@ def get_ra_base_info(
         ["date", "code", "code_rq", "trade_status", "riskwarning", "list_days"]
     ]
 
+    n_before = len(df_results)
+    df_results = df_results.drop_duplicates(subset=["code_rq"], keep="last")
+    n_dup = n_before - len(df_results)
+    if n_dup:
+        print(f"⚠️ 当日 RQ 结果中 code_rq 重复 {n_dup} 条，已去重后入库")
+
     if "trade_status" in df_results.columns:
         trade_count = df_results["trade_status"].sum() if df_results["trade_status"].notna().any() else 0
         suspended_count = len(df_results) - trade_count
@@ -315,6 +321,12 @@ def get_ra_base_info(
             variants = _mongo_date_variants(date_str)
             dr = table.delete_many({"date": {"$in": variants}})
             print(f"已删除当日旧记录: {dr.deleted_count} 条（date in {variants}）")
+            remain = table.count_documents({"date": {"$in": variants}})
+            if remain:
+                print(
+                    f"⚠️ 删除后仍有 {remain} 条（date 格式可能未覆盖），"
+                    f"请检查是否与其它 date 写法重复"
+                )
 
         print("\n正在插入数据到数据库...")
         insert_db_from_df(table=table, df=df_results)
