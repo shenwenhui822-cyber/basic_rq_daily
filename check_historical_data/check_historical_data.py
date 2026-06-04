@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-basic_rq 历史数据质量检查（只读 MongoDB，不写库、不调用米筐 API）。
+basic_rq / rq_minute 历史数据质量检查（只读 MongoDB，不写库、不调用米筐 API）。
 
 三类检查（默认起始日来自说明文档.md）：
   1. 唯一性：norm_date + 业务键 仅 1 条
@@ -12,14 +12,14 @@ basic_rq 历史数据质量检查（只读 MongoDB，不写库、不调用米筐
 用法::
 
     python check_historical_data/check_historical_data.py
-    python check_historical_data/check_historical_data.py --collection rq_base_info
-    python check_historical_data/check_historical_data.py --end 2026-05-30
+    python check_historical_data/check_historical_data.py --collection rq_minute_none_2026
+    python check_historical_data/check_historical_data.py --skip-minute
 """
 from __future__ import annotations
 
 import argparse
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
@@ -30,6 +30,9 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _DEFAULT_REPORT_DIR = _SCRIPT_DIR / "reports"
 
 mongodb_url = "mongodb://reader:readonly_wonderwz@192.168.110.199:27018"
+DEFAULT_MONGO_ALIAS = "wonderwz27018_ro"
+
+MINUTE_COLLECTION_PREFIX = "rq_minute_none_"
 
 MAX_DUP_DETAIL = 500
 MAX_REPORT_SAMPLES = 20
@@ -81,7 +84,7 @@ class IssueIdsWriter:
     def write_header(self, *, mongo_host: str, report_path: Path) -> None:
         self.write_lines(
             [
-                "basic_rq 历史数据质量问题明细（全部 _id / 日期）",
+                "basic_rq / rq_minute 历史数据质量问题明细（全部 _id / 日期）",
                 f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 f"Mongo: {mongo_host}",
                 f"对应检查报告: {report_path.name}",
@@ -129,7 +132,7 @@ class IssueIdsWriter:
             "--- [2] 缺字段文档 _id（值可为 null 时字段须存在；下列为全部问题 _id）---"
         )
 
-    def write_field_issue_line(
+    def     write_field_issue_line(
         self,
         *,
         doc_id: Any,
@@ -137,11 +140,13 @@ class IssueIdsWriter:
         code_rq: Any = None,
         code: Any = None,
         indus_code: Any = None,
+        time: Any = None,
         missing_fields: list[str],
     ) -> None:
         biz = code_rq or code or indus_code or ""
+        time_part = f" time={time}" if time is not None else ""
         self.write_line(
-            f"_id={doc_id} | norm_date={norm_date} | "
+            f"_id={doc_id} | norm_date={norm_date}{time_part} | "
             f"业务键={biz} | 缺字段: {', '.join(missing_fields)}"
         )
         self._counts["fields"] += 1
@@ -211,9 +216,42 @@ class TableSpec:
     unique_key: tuple[str, ...]
     rule_desc: str
     expected_docs_per_day: int | None = None
+    year_sharded: bool = False
+    """True 时按年分表，集合名为 rq_minute_none_YYYY"""
 
 
-# 说明文档.md · 已存在数据起始日 + JSON 示例字段（仅 basic_rq 9 表）
+@dataclass(frozen=True)
+class CheckRunResult:
+    report_path: Path
+    issue_ids_path: Path
+    passed: bool
+    check_start: str
+    check_end: str
+    elapsed_seconds: float
+    summary_lines: tuple[str, ...]
+    table_summary: tuple[tuple[str, dict[str, bool]], ...]
+
+    @property
+    def summary_text(self) -> str:
+        return "\n".join(self.summary_lines)
+
+
+def resolve_mongodb_url(
+    *,
+    mongo_url: str | None = None,
+    mongo_alias: str | None = None,
+) -> str:
+    if mongo_url:
+        return mongo_url
+    alias = (mongo_alias or DEFAULT_MONGO_ALIAS).strip()
+    if alias:
+        from mongo_connect import _build_uri, _resolve_config
+
+        return _build_uri(_resolve_config(alias))
+    return mongodb_url
+
+
+# 说明文档.md · 已存在数据起始日 + JSON 示例字段
 TABLE_SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         db="basic_rq",
@@ -388,7 +426,80 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
         unique_key=("code_rq",),
         rule_desc="年报 PIT 附注截面；每日每只股票一条",
     ),
+    TableSpec(
+        db="rq_minute",
+        collection="rq_minute_none_{year}",
+        default_start="2026-01-05",
+        required_fields=(
+            "date",
+            "time",
+            "code",
+            "code_rq",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "total_turnover",
+        ),
+        nullable_fields=(),
+        unique_key=("time", "code_rq"),
+        rule_desc="全市场 1 分钟线（按年分表 rq_minute_none_YYYY）；每日每 time+code_rq 一条",
+        year_sharded=True,
+    ),
 )
+
+
+def _list_filterable_collections() -> list[str]:
+    names: list[str] = []
+    for s in TABLE_SPECS:
+        if s.year_sharded:
+            names.append("rq_minute")
+        else:
+            names.append(s.collection)
+    return names
+
+
+def _spec_matches_filter(spec: TableSpec, want: set[str]) -> bool:
+    if spec.collection in want:
+        return True
+    if spec.year_sharded:
+        if "rq_minute" in want:
+            return True
+        return any(w.startswith(MINUTE_COLLECTION_PREFIX) for w in want)
+    return False
+
+
+def _expand_check_targets(
+    spec: TableSpec,
+    client: pymongo.MongoClient,
+    start_n: str,
+    end_n: str,
+    collection_filter: set[str] | None,
+) -> list[tuple[TableSpec, str, str]]:
+    """展开检查目标；按年分表时返回多个 (spec, start, end)。"""
+    existing = set(client[spec.db].list_collection_names())
+    if not spec.year_sharded:
+        if spec.collection not in existing:
+            return []
+        return [(spec, start_n, end_n)]
+
+    start_year = int(start_n[:4])
+    end_year = int(end_n[:4])
+    targets: list[tuple[TableSpec, str, str]] = []
+
+    for year in range(start_year, end_year + 1):
+        coll = f"{MINUTE_COLLECTION_PREFIX}{year}"
+        if collection_filter and coll not in collection_filter and "rq_minute" not in collection_filter:
+            continue
+        if coll not in existing:
+            continue
+        shard_start = max(start_n, f"{year}-01-01")
+        shard_end = min(end_n, f"{year}-12-31")
+        if shard_start > shard_end:
+            continue
+        targets.append((replace(spec, collection=coll), shard_start, shard_end))
+    return targets
 
 
 def _norm_date_str(raw: Any) -> str | None:
@@ -540,6 +651,7 @@ def check_field_completeness(
                         {
                             "_id": doc.get("_id"),
                             "norm_date": day,
+                            "time": doc.get("time"),
                             "code_rq": doc.get("code_rq"),
                             "code": doc.get("code"),
                             "indus_code": doc.get("indus_code"),
@@ -553,6 +665,7 @@ def check_field_completeness(
                         code_rq=doc.get("code_rq"),
                         code=doc.get("code"),
                         indus_code=doc.get("indus_code"),
+                        time=doc.get("time"),
                         missing_fields=missing,
                     )
 
@@ -708,12 +821,14 @@ def _write_table_report(
             lines.append(
                 f"全部缺字段 _id（共 {inc} 条）见: {issue_ids_path.name}"
             )
+        samples = fields.get("samples") or []
         if samples:
             lines.append(f"报告内样例（前 {len(samples)} 条）:")
             for s in samples:
                 missing = s.get("missing_fields") or []
                 lines.append(
                     f"  _id={s.get('_id')} norm_date={s.get('norm_date')} "
+                    f"time={s.get('time', '-')} "
                     f"code_rq={s.get('code_rq', s.get('code', s.get('indus_code')))} "
                     f"缺: {', '.join(missing)}"
                 )
@@ -760,16 +875,20 @@ def _write_table_report(
 
 def run_check(
     *,
-    mongo_url: str = mongodb_url,
+    mongo_url: str | None = None,
+    mongo_alias: str | None = None,
     end: str | None = None,
     start_override: str | None = None,
     collections: list[str] | None = None,
     report_path: Path | None = None,
     verbose: bool = True,
-) -> Path:
+    skip_minute: bool = False,
+) -> CheckRunResult:
     global _RUN_T0, _VERBOSE, _REPORT_WRITER
     _RUN_T0 = time.perf_counter()
     _VERBOSE = verbose
+
+    mongo_url_resolved = resolve_mongodb_url(mongo_url=mongo_url, mongo_alias=mongo_alias)
 
     report_path = report_path or (
         _DEFAULT_REPORT_DIR / f"data_quality_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
@@ -777,20 +896,22 @@ def run_check(
     issue_ids_path = report_path.with_name(report_path.stem + "_issue_ids.txt")
 
     specs = list(TABLE_SPECS)
-    if collections:
-        want = {c.strip() for c in collections}
-        specs = [s for s in specs if s.collection in want]
+    if skip_minute:
+        specs = [s for s in specs if not s.year_sharded]
+    collection_filter = {c.strip() for c in collections} if collections else None
+    if collection_filter:
+        specs = [s for s in specs if _spec_matches_filter(s, collection_filter)]
         if not specs:
-            raise ValueError(f"未匹配集合，可选: {[s.collection for s in TABLE_SPECS]}")
+            raise ValueError(f"未匹配集合，可选: {_list_filterable_collections()}")
 
-    mongo_host = mongo_url.split("@")[-1] if "@" in mongo_url else mongo_url
+    mongo_host = mongo_url_resolved.split("@")[-1] if "@" in mongo_url_resolved else mongo_url_resolved
     writer = ReportWriter(report_path)
     issue_writer = IssueIdsWriter(issue_ids_path)
     _REPORT_WRITER = writer
     issue_writer.write_header(mongo_host=mongo_host, report_path=report_path)
     writer.write_lines(
         [
-            "basic_rq 历史数据质量检查报告（只读 MongoDB）",
+            "basic_rq / rq_minute 历史数据质量检查报告（只读 MongoDB）",
             f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"Mongo: {mongo_host}",
             f"问题明细 _id 文件: {issue_ids_path.name}",
@@ -801,10 +922,10 @@ def run_check(
         ]
     )
 
-    _log("开始检查 basic_rq 历史数据质量（只读）")
+    _log("开始检查 basic_rq / rq_minute 历史数据质量（只读）")
     _log(f"报告文件: {report_path}")
     _log(f"问题 _id 明细: {issue_ids_path}")
-    _log(f"待检查表数: {len(specs)}")
+    _log(f"配置表数: {len(specs)}")
     if start_override:
         _log(f"全局起始日 --start: {start_override}")
     if end:
@@ -813,7 +934,7 @@ def run_check(
     _log(f"连接 MongoDB {mongo_host} …")
     t_connect = time.perf_counter()
     client = pymongo.MongoClient(
-        mongo_url,
+        mongo_url_resolved,
         serverSelectionTimeoutMS=30_000,
         connectTimeoutMS=30_000,
         socketTimeoutMS=600_000,
@@ -825,54 +946,63 @@ def run_check(
     end_n = resolve_end_date(client, end)
     _log(f"检查截止 norm_date: {end_n}")
 
+    check_targets: list[tuple[TableSpec, str, str]] = []
+    skip_entries: list[tuple[TableSpec, str, str, str]] = []
+    for spec in specs:
+        start_n = _norm_date_str(start_override) if start_override else spec.default_start
+        if start_n > end_n:
+            skip_entries.append((spec, start_n, end_n, f"起始日 {start_n} 晚于截止日 {end_n}"))
+            continue
+        expanded = _expand_check_targets(spec, client, start_n, end_n, collection_filter)
+        if expanded:
+            check_targets.extend(expanded)
+        else:
+            if spec.year_sharded:
+                reason = f"区间内无 {MINUTE_COLLECTION_PREFIX}* 集合"
+            else:
+                reason = "集合不存在"
+            skip_entries.append((spec, start_n, end_n, reason))
+
     summary: list[tuple[str, dict[str, bool]]] = []
     any_fail = False
-    total_tables = len(specs)
+    total_tables = len(check_targets) + len(skip_entries)
     results_section_opened = False
 
-    for idx, spec in enumerate(specs, start=1):
+    def _flush_table_lines(table_lines: list[str]) -> None:
+        nonlocal results_section_opened
+        if not results_section_opened:
+            writer.write_line("")
+            writer.write_line("=== 检查结果 ===")
+            writer.write_line("")
+            results_section_opened = True
+        writer.write_lines(table_lines)
+
+    _log(f"待检查集合数: {len(check_targets)}（跳过 {len(skip_entries)}）")
+
+    table_idx = 0
+    for spec, start_n, end_n, reason in skip_entries:
+        table_idx += 1
+        _log(f"表 ({table_idx}/{total_tables}) {spec.db}.{spec.collection} · [SKIP] {reason}", level="WARN")
+        _flush_table_lines(
+            [
+                "=" * 60,
+                f"{spec.db}.{spec.collection}",
+                f"结果: [SKIP] {reason}",
+                "",
+            ]
+        )
+
+    if not check_targets and not skip_entries:
+        _log("无待检查集合", level="WARN")
+
+    for spec, start_n, end_n in check_targets:
+        table_idx += 1
         _log("=" * 50)
-        _log(f"表 ({idx}/{total_tables}) {spec.db}.{spec.collection}")
+        _log(f"表 ({table_idx}/{total_tables}) {spec.db}.{spec.collection}")
         t_table = time.perf_counter()
         table_lines: list[str] = []
 
-        def _flush_table_result() -> None:
-            nonlocal results_section_opened
-            if not results_section_opened:
-                writer.write_line("")
-                writer.write_line("=== 检查结果 ===")
-                writer.write_line("")
-                results_section_opened = True
-            writer.write_lines(table_lines)
-
-        if spec.collection not in client[spec.db].list_collection_names():
-            _log(f"{spec.collection} · [SKIP] 集合不存在", level="WARN")
-            table_lines.extend(
-                [
-                    "=" * 60,
-                    f"{spec.db}.{spec.collection}",
-                    "结果: [SKIP] 集合不存在",
-                    "",
-                ]
-            )
-            _flush_table_result()
-            continue
-
-        start_n = _norm_date_str(start_override) if start_override else spec.default_start
         _log(f"{spec.collection} · 检查区间 norm_date: {start_n} ~ {end_n}")
-        if start_n > end_n:
-            _log(f"{spec.collection} · [SKIP] 起始日晚于截止日", level="WARN")
-            table_lines.extend(
-                [
-                    "=" * 60,
-                    f"{spec.db}.{spec.collection}",
-                    f"结果: [SKIP] 起始日 {start_n} 晚于截止日 {end_n}",
-                    "",
-                ]
-            )
-            _flush_table_result()
-            continue
-
         trade_dates = fetch_trade_dates(client, start_n, end_n)
         coll = client[spec.db][spec.collection]
         issue_writer.begin_table(spec, start_n, end_n)
@@ -899,7 +1029,7 @@ def run_check(
             dates=dates,
             issue_ids_path=issue_ids_path,
         )
-        _flush_table_result()
+        _flush_table_lines(table_lines)
         summary.append((f"{spec.db}.{spec.collection}", issues))
         if any(issues.values()):
             any_fail = True
@@ -936,9 +1066,10 @@ def run_check(
 
     writer.write_line("")
     writer.write_lines(summary_lines)
+    elapsed = time.perf_counter() - _RUN_T0
     _log(
         "全部完成，总耗时 "
-        f"{time.perf_counter() - _RUN_T0:.1f}s，"
+        f"{elapsed:.1f}s，"
         f"总体结论: {'[FAIL]' if any_fail else '[OK]'}"
     )
     _log(f"报告已写入: {report_path}")
@@ -953,7 +1084,20 @@ def run_check(
             print(text)
         except UnicodeEncodeError:
             print(text.encode("gbk", errors="replace").decode("gbk"))
-    return report_path
+
+    range_starts = [s for _, s, _ in check_targets]
+    check_start = min(range_starts) if range_starts else (_norm_date_str(start_override) or end_n)
+
+    return CheckRunResult(
+        report_path=report_path,
+        issue_ids_path=issue_ids_path,
+        passed=not any_fail,
+        check_start=check_start,
+        check_end=end_n,
+        elapsed_seconds=elapsed,
+        summary_lines=tuple(summary_lines),
+        table_summary=tuple(summary),
+    )
 
 
 def main() -> int:
@@ -965,23 +1109,35 @@ def main() -> int:
     )
     p.add_argument("--end", default=None, help="截止 norm_date；默认 economic.trade_dates 最新日")
     p.add_argument("--collection", action="append", dest="collections", help="只检查指定集合")
-    p.add_argument("--mongodb-url", default=mongodb_url)
+    p.add_argument("--mongodb-url", default=None, help="Mongo 连接 URL；未指定则用 --mongo-alias")
+    p.add_argument(
+        "--mongo-alias",
+        default=DEFAULT_MONGO_ALIAS,
+        help=f"Mongo 别名（mongo_connect.py），默认 {DEFAULT_MONGO_ALIAS}",
+    )
     p.add_argument("--output", default=None, help="报告 txt 路径")
     p.add_argument(
         "--quiet",
         action="store_true",
         help="不打印进度日志（结束时仍输出报告全文）",
     )
+    p.add_argument(
+        "--skip-minute",
+        action="store_true",
+        help="跳过 rq_minute 按年分表（数据量大，耗时长）",
+    )
     args = p.parse_args()
-    run_check(
+    result = run_check(
         mongo_url=args.mongodb_url,
+        mongo_alias=None if args.mongodb_url else args.mongo_alias,
         end=args.end,
         start_override=args.start,
         collections=args.collections,
         report_path=Path(args.output) if args.output else None,
         verbose=not args.quiet,
+        skip_minute=args.skip_minute,
     )
-    return 0
+    return 0 if result.passed else 1
 
 
 if __name__ == "__main__":

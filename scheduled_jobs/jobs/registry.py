@@ -27,6 +27,7 @@ def _ensure_runner_map() -> None:
         rq_minute,
         rq_minute_backfill,
         rq_quarterly,
+        rq_data_quality_check,
         rq_swl2,
         rq_swl2_price,
         rq_yearly,
@@ -78,6 +79,10 @@ def _ensure_runner_map() -> None:
                 rq_minute_backfill.run,
                 "rq_minute_none：10:00 起在 14:40 前按自然月倒序批量补历史分钟线",
             ),
+            rq_data_quality_check.SCHEDULER_JOB_KEY: (
+                rq_data_quality_check.run,
+                "basic_rq/rq_minute：交易日 08:45 检查最近两个交易日数据质量",
+            ),
         }
     )
 
@@ -109,8 +114,17 @@ def run_job(spec: JobSpec, *, notify: bool = True) -> JobResult:
             body = (
                 f"{spec.description}\n"
                 f"计划时刻：{spec.schedule_time}\n\n"
-                f"{result.message}\n\n详情：{result.detail}"
+                f"{result.message}\n"
             )
+            summary = result.detail.get("summary") if result.detail else None
+            if summary:
+                body += f"\n{summary}\n"
+                if result.detail.get("report_path"):
+                    body += f"\n报告：{result.detail['report_path']}"
+                if result.detail.get("issue_ids_path"):
+                    body += f"\n问题明细：{result.detail['issue_ids_path']}"
+            else:
+                body += f"\n\n详情：{result.detail}"
             send_task_email(title, body)
 
     return result
