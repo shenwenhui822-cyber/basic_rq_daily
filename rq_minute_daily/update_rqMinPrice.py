@@ -38,7 +38,6 @@ MINUTE_PRICE_FIELDS = [
     "close",
     "volume",
     "total_turnover",
-    "num_trades",
 ]
 
 DATE_FMT_DB = "%Y-%m-%d"

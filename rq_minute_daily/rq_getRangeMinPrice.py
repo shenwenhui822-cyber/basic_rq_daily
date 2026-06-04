@@ -1,6 +1,6 @@
 """
 区间 1 分钟线落库：流程对齐 rq_getRangeDailyPrice（基础表 lookup → 按日分批拉数），
-拉数使用 get_Min1Test1 的 get_price 1m 与字段降级策略。
+拉数使用 get_Min1Test1 的 get_price 1m（OHLCV + total_turnover）。
 
 ⚠️ 分钟线数据量远大于日线，务必关注 RQ 配额；本脚本默认短区间 + 分批 + 多处配额检查。
 落库：MongoDB ``rq_minute.rq_minute_none_YYYY``（按交易日年份自动分表）；每条文档含字符串 ``date``（``YYYY-MM-DD``）与 ``time``（``HH:MM:SS``）。

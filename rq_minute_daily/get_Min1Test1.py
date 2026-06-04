@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 import rqdatac as rq
 
-# 与 update_rqMinPrice.MINUTE_PRICE_FIELDS 一致（全量）；拉取失败时按子集降级
+# 与 update_rqMinPrice.MINUTE_PRICE_FIELDS 一致
 CURRENT_MINUTE_FIELDS_FULL = [
     "open",
     "high",
@@ -19,7 +19,6 @@ CURRENT_MINUTE_FIELDS_FULL = [
     "close",
     "volume",
     "total_turnover",
-    "num_trades",
 ]
 
 
@@ -60,7 +59,7 @@ def fetch_trade_day_1m_bars_with_fallback(
     trade_date_str: str,
 ) -> tuple[pd.DataFrame, list[str], None]:
     """
-    单日 1m：先按全字段请求，失败则依次减少字段（如去掉 num_trades）。
+    单日 1m：拉取 OHLCV + total_turnover（不含 num_trades）。
 
     Returns:
         (规整后的宽表面板, 实际使用的 fields, None 占位与历史接口兼容)
@@ -69,35 +68,19 @@ def fetch_trade_day_1m_bars_with_fallback(
         return pd.DataFrame(), list(CURRENT_MINUTE_FIELDS_FULL), None
 
     d = resolve_cn_trade_date(trade_date_str)
-    candidates: list[list[str]] = [
-        list(CURRENT_MINUTE_FIELDS_FULL),
-        [f for f in CURRENT_MINUTE_FIELDS_FULL if f != "num_trades"],
-        ["open", "high", "low", "close", "volume", "total_turnover"],
-    ]
-
-    last_err: Exception | None = None
-    for fields in candidates:
-        try:
-            raw: Any = rq.get_price(
-                order_book_ids,
-                start_date=d,
-                end_date=d,
-                frequency="1m",
-                fields=fields,
-                expect_df=True,
-                market="cn",
-            )
-            if raw is None:
-                continue
-            if isinstance(raw, pd.DataFrame) and raw.empty:
-                last_err = RuntimeError("get_price 返回空表")
-                continue
-            norm = normalize_minute_wide(raw, fields)
-            return norm, fields, None
-        except Exception as e:
-            last_err = e
-            continue
-
-    if last_err:
-        raise last_err
-    raise RuntimeError("fetch_trade_day_1m_bars_with_fallback: 无可用的字段组合")
+    fields = list(CURRENT_MINUTE_FIELDS_FULL)
+    raw: Any = rq.get_price(
+        order_book_ids,
+        start_date=d,
+        end_date=d,
+        frequency="1m",
+        fields=fields,
+        expect_df=True,
+        market="cn",
+    )
+    if raw is None:
+        raise RuntimeError("get_price 返回 None")
+    if isinstance(raw, pd.DataFrame) and raw.empty:
+        raise RuntimeError("get_price 返回空表")
+    norm = normalize_minute_wide(raw, fields)
+    return norm, fields, None
