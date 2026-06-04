@@ -12,14 +12,18 @@ bootstrap(__file__)
 import argparse
 import logging
 import time
+import traceback
+from typing import Any
 
 import pandas as pd
 import rqdatac as rq
 
-from trade_date_utils import parse_start_end_range
+from trade_date_utils import parse_explicit_date_arg, parse_start_end_range
 from usedbdef import get_client, insert_db_from_df
 
 logger = logging.getLogger(__name__)
+
+DATE_FMT_DB = "%Y-%m-%d"
 
 _RQ_INITIALIZED = False
 
@@ -37,17 +41,73 @@ def _init_rq() -> None:
         raise
 
 
-def get_ra_base_info(input_date: str) -> pd.DataFrame:
+def _mongo_date_variants(d: str) -> list[str]:
+    """库内 date 可能为 YYYY/MM/DD 或 YYYY-MM-DD，删除时两种都匹配。"""
+    s = str(d).strip()
+    out = [s]
+    if "/" in s:
+        out.append(s.replace("/", "-"))
+    elif "-" in s and s.count("-") >= 2:
+        parts = s.split("-")
+        if len(parts) == 3 and all(parts):
+            y, m, n = parts[0], parts[1].zfill(2), parts[2].zfill(2)
+            out.append(f"{y}/{m}/{n}")
+    return list(dict.fromkeys(out))
+
+
+def _input_date_to_yyyymmdd(input_date: str) -> str:
+    return pd.Timestamp(str(input_date).replace("/", "-")).strftime("%Y%m%d")
+
+
+def _instruments_map_for_codes(codes: list[str]) -> dict[str, Any]:
+    if not codes:
+        return {}
+    try:
+        insts = rq.instruments(codes)
+        if insts is None:
+            return {}
+        if not isinstance(insts, list):
+            insts = [insts]
+        return {
+            getattr(x, "order_book_id", None): x
+            for x in insts
+            if x is not None and getattr(x, "order_book_id", None) is not None
+        }
+    except Exception as e:
+        logger.warning("rq.instruments 批量失败: %s", e)
+        return {}
+
+
+def _listing_days_for_code(inst, date_yyyymmdd: str) -> int | None:
+    if inst is None:
+        return None
+    try:
+        v = inst.days_from_listed(date_yyyymmdd)
+        return int(v) if v is not None else None
+    except Exception:
+        return None
+
+
+def get_ra_base_info(
+    input_date: str,
+    *,
+    mongo_alias: str = "wonderwz27018_rw",
+    delete_before_insert: bool = True,
+) -> pd.DataFrame:
     """
     获取指定日期的RQData基础信息并入库
     
-    :param input_date: 交易日期，格式如 "2026/02/10"
+    :param input_date: 交易日期，格式如 "2015-09-30" / "2015/09/30"
+    :param delete_before_insert: True 时先删当日旧记录再插入（重跑历史可补 list_days）
     :return: 处理后的DataFrame
     """
-    print(f"\n=== 开始获取 {input_date} 的RQData基础信息 ===")
-    
-    # 获取所有股票基本信息
-    df_allinstrument = rq.all_instruments(type='CS', date=input_date, market='cn')
+    date_str = parse_explicit_date_arg(str(input_date), fmt=DATE_FMT_DB)
+    rq_date = date_str.replace("-", "/")
+    date_yyyymmdd = _input_date_to_yyyymmdd(date_str)
+
+    print(f"\n=== 开始获取 {date_str} 的 RQData 基础信息 ===")
+
+    df_allinstrument = rq.all_instruments(type="CS", date=rq_date, market="cn")
     print(f"共获取到 {len(df_allinstrument)} 只股票")
     print(f"数据结构: {df_allinstrument.columns.tolist()}")
     
@@ -83,11 +143,10 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
         
         try:
             # 批量查询停牌状态
-            dfsus = rq.is_suspended(batch_codes, start_date=input_date, end_date=input_date, market="cn")
-            
-            # 批量查询ST状态
-            st_status = rq.is_st_stock(batch_codes, start_date=input_date, end_date=input_date, market="cn")
-            
+            dfsus = rq.is_suspended(batch_codes, start_date=rq_date, end_date=rq_date, market="cn")
+            st_status = rq.is_st_stock(batch_codes, start_date=rq_date, end_date=rq_date, market="cn")
+            inst_map = _instruments_map_for_codes(batch_codes)
+
             # 处理每只股票的结果
             for j, stock_code in enumerate(batch_codes):
                 try:
@@ -121,25 +180,26 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
                     
                     # 转换ST状态为1/0：True→1，False→0
                     riskwarning = 1 if st_flag else 0
-                    
-                    # 添加到结果
+                    list_days = _listing_days_for_code(inst_map.get(stock_code), date_yyyymmdd)
+
                     batch_results.append({
-                        'date': str(input_date),  # 交易日期，字符串格式
-                        'code': code,           # 新的代码格式：SZ000001/SH600000
-                        'code_rq': stock_code,  # 原始RQ格式：000001.XSHE/600000.XSHG
-                        'trade_status': trade_status,
-                        'riskwarning': riskwarning  # 是否为ST股票：1=是，0=否
+                        "date": date_str,
+                        "code": code,
+                        "code_rq": stock_code,
+                        "trade_status": trade_status,
+                        "riskwarning": riskwarning,
+                        "list_days": list_days,
                     })
-                    
+
                 except Exception as e:
                     print(f"处理股票 {stock_code} 时出错: {e}")
-                    # 添加错误信息到结果
                     batch_results.append({
-                        'date': str(input_date),
-                        'code': stock_code,
-                        'code_rq': stock_code,
-                        'trade_status': None,
-                        'riskwarning': None
+                        "date": date_str,
+                        "code": stock_code,
+                        "code_rq": stock_code,
+                        "trade_status": None,
+                        "riskwarning": None,
+                        "list_days": None,
                     })
             
             # 将批次结果添加到总结果
@@ -154,11 +214,10 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
             
         except Exception as e:
             print(f"处理批次时出错: {e}")
-            # 出错时降级为单只处理
+            traceback.print_exc()
             for stock_code in batch_codes:
                 try:
-                    # 获取停牌状态
-                    dfsus = rq.is_suspended(stock_code, start_date=input_date, end_date=input_date, market="cn")
+                    dfsus = rq.is_suspended(stock_code, start_date=rq_date, end_date=rq_date, market="cn")
                     
                     # 提取布尔值结果
                     is_suspended = False
@@ -182,7 +241,7 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
                     
                     # 获取股票ST状态
                     try:
-                        is_st = rq.is_st_stock(stock_code, start_date=input_date, end_date=input_date, market="cn")
+                        is_st = rq.is_st_stock(stock_code, start_date=rq_date, end_date=rq_date, market="cn")
                         st_flag = False
                         if hasattr(is_st, 'values') and is_st.values.size > 0:
                             st_flag = is_st.values[0]
@@ -196,24 +255,33 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
                     
                     # 转换ST状态
                     riskwarning = 1 if st_flag else 0 if st_flag is not None else None
-                    
-                    # 添加到结果
+
+                    try:
+                        inst_one = rq.instruments(stock_code)
+                        if isinstance(inst_one, list):
+                            inst_one = inst_one[0] if inst_one else None
+                        list_days = _listing_days_for_code(inst_one, date_yyyymmdd)
+                    except Exception:
+                        list_days = None
+
                     results.append({
-                        'date': str(input_date),
-                        'code': code,
-                        'code_rq': stock_code,
-                        'trade_status': trade_status,
-                        'riskwarning': riskwarning
+                        "date": date_str,
+                        "code": code,
+                        "code_rq": stock_code,
+                        "trade_status": trade_status,
+                        "riskwarning": riskwarning,
+                        "list_days": list_days,
                     })
-                    
+
                 except Exception as stock_err:
                     print(f"处理股票 {stock_code} 时出错: {stock_err}")
                     results.append({
-                        'date': str(input_date),
-                        'code': stock_code,
-                        'code_rq': stock_code,
-                        'trade_status': None,
-                        'riskwarning': None
+                        "date": date_str,
+                        "code": stock_code,
+                        "code_rq": stock_code,
+                        "trade_status": None,
+                        "riskwarning": None,
+                        "list_days": None,
                     })
             
             total_processed += len(batch_codes)
@@ -224,27 +292,30 @@ def get_ra_base_info(input_date: str) -> pd.DataFrame:
     df_results = pd.DataFrame(results)
     
     # 只保留需要的列，确保顺序正确
-    df_results = df_results[['date', 'code', 'code_rq', 'trade_status', 'riskwarning']]
-    
-    # 统计交易状态
-    if 'trade_status' in df_results.columns:
-        trade_count = df_results['trade_status'].sum() if df_results['trade_status'].notna().any() else 0
+    df_results = df_results[
+        ["date", "code", "code_rq", "trade_status", "riskwarning", "list_days"]
+    ]
+
+    if "trade_status" in df_results.columns:
+        trade_count = df_results["trade_status"].sum() if df_results["trade_status"].notna().any() else 0
         suspended_count = len(df_results) - trade_count
+        list_days_ok = df_results["list_days"].notna().sum()
         print(f"\n✅ 处理完成")
         print(f"正常交易股票数量(trade_status=1): {trade_count}")
         print(f"停牌股票数量(trade_status=0): {suspended_count}")
-    
+        print(f"list_days 非空: {list_days_ok}/{len(df_results)}")
 
-    
-    # 连接数据库并插入数据
     print("\n正在连接数据库...")
     try:
-        # 获取数据库连接（读写库）
-        client = get_client('wonderwz27018_rw')
-        table = client['basic_rq']['rq_base_info']
+        client = get_client(mongo_alias)
+        table = client["basic_rq"]["rq_base_info"]
         print(f"✅ 数据库连接成功，表：{table}")
-        
-        # 插入数据
+
+        if delete_before_insert:
+            variants = _mongo_date_variants(date_str)
+            dr = table.delete_many({"date": {"$in": variants}})
+            print(f"已删除当日旧记录: {dr.deleted_count} 条（date in {variants}）")
+
         print("\n正在插入数据到数据库...")
         insert_db_from_df(table=table, df=df_results)
         print(f"✅ 数据插入完成，共插入 {len(df_results)} 条记录")
@@ -295,7 +366,7 @@ def main(
     logger.warning("数据下载区间: %s ~ %s，共 %d 个交易日", trade_dates[0], trade_dates[-1], len(trade_dates))
 
     for input_date in trade_dates:
-        get_ra_base_info(input_date)
+        get_ra_base_info(input_date, mongo_alias=mongo_alias)
 
     print(f"\n=== 区间 {trade_dates[0]} ~ {trade_dates[-1]} 的 RQData 基础信息获取完成 ===")
 
