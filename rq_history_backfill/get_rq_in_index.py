@@ -4,6 +4,7 @@
 用米筐 index_components 生成 basic_rq.rq_base_index 宽基成分标记。
 
 字段：date, code, code_rq, in_SZ50, in_HS300, in_ZZ500, in_ZZ1000, in_ZZ2000
+in_ZZ2000：2023-08-11 起 0/1；此前写 null（中证 2000 尚无成分）
 时间范围：2026-04-01 ~ 2026-05-15 全部 A 股交易日（与 rq_base_info 对齐）
 """
 from __future__ import annotations
@@ -54,6 +55,8 @@ INDEX_DEFS: list[tuple[str, str]] = [
 
 CSI2000_CANDIDATES: tuple[str, ...] = ("932000.INDX", "932000.XSHG", "932000.CSI")
 CSI2000_MIN_COMPONENTS: int = 500
+# 中证 2000 指数 2023-08-11 起才有成分；此前 in_ZZ2000 写 null
+CSI2000_FIRST_DATE = "2023-08-11"
 FLAG_COLS = ["in_SZ50", "in_HS300", "in_ZZ500", "in_ZZ1000", "in_ZZ2000"]
 
 # 一次性历史补齐区间（日更请用 update_rq_in_index.py，默认 T-1）
@@ -78,15 +81,18 @@ def resolve_csi2000_obid(as_of: str) -> str:
     raise RuntimeError(f"无法解析中证2000指数代码，最后错误：{last_err}")
 
 
-def fetch_index_sets(as_of: str) -> dict[str, set[str]]:
-    """as_of: YYYY-MM-DD"""
-    out: dict[str, set[str]] = {}
+def fetch_index_sets(as_of: str) -> dict[str, set[str] | None]:
+    """as_of: YYYY-MM-DD；in_ZZ2000 在 CSI2000_FIRST_DATE 之前为 None（入库 null）"""
+    out: dict[str, set[str] | None] = {}
     for oid, col in INDEX_DEFS:
         comp = rq.index_components(oid, date=as_of)
         out[col] = set(comp or [])
-    c2k = resolve_csi2000_obid(as_of)
-    comp2k = rq.index_components(c2k, date=as_of)
-    out["in_ZZ2000"] = set(comp2k or [])
+    if as_of < CSI2000_FIRST_DATE:
+        out["in_ZZ2000"] = None
+    else:
+        c2k = resolve_csi2000_obid(as_of)
+        comp2k = rq.index_components(c2k, date=as_of)
+        out["in_ZZ2000"] = set(comp2k or [])
     return out
 
 
@@ -126,7 +132,9 @@ def delete_index_in_range(index_table: Any, start: str = RANGE_START, end: str =
     return deleted
 
 
-def build_index_frame(info_table: Any, date_str: str, index_sets: dict[str, set[str]]) -> pd.DataFrame:
+def build_index_frame(
+    info_table: Any, date_str: str, index_sets: dict[str, set[str] | None]
+) -> pd.DataFrame:
     rows = list(
         info_table.find(
             {"date": date_str},
@@ -138,7 +146,11 @@ def build_index_frame(info_table: Any, date_str: str, index_sets: dict[str, set[
 
     df = pd.DataFrame(rows)
     for col in FLAG_COLS:
-        df[col] = df["code_rq"].isin(index_sets[col]).astype("int32")
+        members = index_sets[col]
+        if col == "in_ZZ2000" and members is None:
+            df[col] = None
+        else:
+            df[col] = df["code_rq"].isin(members).astype("int32")
 
     return df[["date", "code", "code_rq"] + FLAG_COLS]
 
@@ -183,7 +195,11 @@ def build_rq_base_index(
         index_sets = fetch_index_sets(rq_date)
         rq_s = perf_counter() - t_rq
         for col in FLAG_COLS:
-            _log(f"        {col}: {len(index_sets[col])} 只")
+            members = index_sets[col]
+            if members is None:
+                _log(f"        {col}: null（<{CSI2000_FIRST_DATE}，指数尚无成分）")
+            else:
+                _log(f"        {col}: {len(members)} 只")
         _log(f"        （米筐 API 耗时 {rq_s:.2f}s）")
 
         _log("  [2/3] 读 Mongo：rq_base_info 当日行 …")

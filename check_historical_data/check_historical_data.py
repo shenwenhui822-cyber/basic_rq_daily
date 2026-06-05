@@ -325,9 +325,9 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
             "in_ZZ1000",
             "in_ZZ2000",
         ),
-        nullable_fields=(),
+        nullable_fields=("in_ZZ2000",),
         unique_key=("code_rq",),
-        rule_desc="宽基指数成分 0/1；每日每只股票一条",
+        rule_desc="宽基指数成分 0/1；in_ZZ2000 在 2023-08-11 前可为 null",
     ),
     TableSpec(
         db="basic_rq",
