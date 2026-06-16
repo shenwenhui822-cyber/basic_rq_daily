@@ -83,6 +83,41 @@ def previous_trade_date(
     return pd.Timestamp(str(doc["trade_date"]).replace("/", "-")).strftime(fmt)
 
 
+def resolve_t_minus_one_for_trade_day_run(
+    *,
+    mongo_alias: str = _DEFAULT_MONGO_ALIAS,
+    client: Any | None = None,
+    fmt: str = "%Y-%m-%d",
+    as_of: date | None = None,
+) -> tuple[str, str]:
+    """
+    交易日定时任务用：返回 ``(今日交易日, 上一交易日 T-1)``。
+
+  - ``as_of`` 默认 ``today_shanghai()``，与 APScheduler 时区一致。
+  - 仅当 ``as_of`` 为交易日时可用；否则报错。
+  - ``T-1`` 为严格早于今日的最近交易日，与 08:03～08:25 日更写入的数据日一致。
+    """
+    ref = as_of or today_shanghai()
+    today_s = norm_trade_date_str(ref.isoformat())
+    if not is_trade_day(today_s, mongo_alias=mongo_alias, client=client):
+        raise ValueError(f"今天 {today_s} 不是交易日，不能解析 T-1 数据日")
+
+    target = previous_trade_date(
+        mongo_alias=mongo_alias,
+        client=client,
+        fmt=fmt,
+        as_of=ref,
+    )
+    target_s = norm_trade_date_str(target)
+    if target_s >= today_s:
+        raise ValueError(
+            f"上一交易日 {target_s} 必须早于今日交易日 {today_s}（禁止同步当日截面）"
+        )
+    if not is_trade_day(target_s, mongo_alias=mongo_alias, client=client):
+        raise ValueError(f"解析出的 T-1 {target_s} 不是交易日")
+    return today_s, pd.Timestamp(target_s).strftime(fmt)
+
+
 def parse_explicit_date_arg(arg: str, *, fmt: str = "%Y-%m-%d") -> str:
     """解析 ``--date``：支持 YYYYMMDD、YYYY/MM/DD、YYYY-MM-DD。"""
     raw = str(arg).strip()

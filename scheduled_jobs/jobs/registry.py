@@ -28,6 +28,7 @@ def _ensure_runner_map() -> None:
         rq_minute_backfill,
         rq_quarterly,
         rq_data_quality_check,
+        rq_sync_basic_rq,
         rq_swl2,
         rq_swl2_price,
         rq_yearly,
@@ -82,6 +83,10 @@ def _ensure_runner_map() -> None:
             rq_data_quality_check.SCHEDULER_JOB_KEY: (
                 rq_data_quality_check.run,
                 "basic_rq/rq_minute：交易日 08:45 检查最近两个交易日数据质量",
+            ),
+            rq_sync_basic_rq.SCHEDULER_JOB_KEY: (
+                rq_sync_basic_rq.run,
+                "basic_rq 9 表：交易日 08:30 同步上一交易日到远端 MongoDB",
             ),
         }
     )

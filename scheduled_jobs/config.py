@@ -10,3 +10,10 @@ DEFAULT_MONGO_ALIAS = "wonderwz27018_rw"
 
 def mongo_trade_alias() -> str:
     return os.environ.get("MONGO_TRADE_ALIAS", DEFAULT_MONGO_ALIAS).strip() or DEFAULT_MONGO_ALIAS
+
+
+def mongo_sync_target_alias() -> str:
+    return (
+        os.environ.get("BASIC_RQ_SYNC_TARGET_ALIAS", "114.80.62.203_rw").strip()
+        or "114.80.62.203_rw"
+    )
