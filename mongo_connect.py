@@ -46,7 +46,7 @@ CLIENT_DICT: dict[str, dict[str, Any]] = {
     },
     "114.80.62.203_rw": {
         "user": "readwriter",
-        "pwd": "wuzhiadmin_wonderwz",
+        "pwd": "readwrite_wonderwz",
         "host": "114.80.62.203",
         "port": 27019,
     },
