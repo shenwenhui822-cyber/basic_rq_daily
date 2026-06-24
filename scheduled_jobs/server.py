@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date, datetime, time
+from datetime import datetime, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -17,7 +17,7 @@ from scheduled_jobs.config import mongo_trade_alias
 from scheduled_jobs.jobs.registry import JOB_REGISTRY, resolve_run_targets, run_job
 from scheduled_jobs.notify.email import notify_configured
 from scheduled_jobs.notify.rq_logs import ensure_rq_logs_indexes
-from trade_date_utils import is_trade_day, now_shanghai
+from trade_date_utils import is_trade_day, now_shanghai, today_shanghai
 
 
 def _should_run_today(spec) -> bool:
@@ -25,7 +25,7 @@ def _should_run_today(spec) -> bool:
         return True
     alias = mongo_trade_alias()
     try:
-        return is_trade_day(date.today().isoformat(), mongo_alias=alias)
+        return is_trade_day(today_shanghai().isoformat(), mongo_alias=alias)
     except Exception:
         logger.exception("判断交易日失败（mongo_alias={}）", alias)
         return False
@@ -119,6 +119,11 @@ def start_server(*, port: int = 7331, notify: bool = True) -> None:
 
         return _job
 
+    now = now_shanghai()
+    logger.info(
+        "调度时区 Asia/Shanghai，当前上海时刻 {}",
+        now.strftime("%Y-%m-%d %H:%M:%S"),
+    )
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
     for spec in JOB_REGISTRY:
         scheduler.add_job(

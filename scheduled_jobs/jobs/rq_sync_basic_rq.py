@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date, datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -33,7 +32,7 @@ def _sync_source_alias() -> str:
 
 def run() -> JobResult:
     from rq_paths import bootstrap
-    from trade_date_utils import is_trade_day, previous_trade_date
+    from trade_date_utils import is_trade_day, now_shanghai, previous_trade_date, today_shanghai
 
     bootstrap(str(_ROOT / "rq_daily_update" / "sync_basic_rq_to_remote.py"), daily=True)
     from sync_basic_rq_to_remote import (
@@ -41,8 +40,8 @@ def run() -> JobResult:
         sync_basic_rq_for_dates,
     )
 
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = date.today().isoformat()
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
+    today = today_shanghai().isoformat()
     source_alias = _sync_source_alias()
     target_alias = _sync_target_alias()
     trade_alias = mongo_trade_alias()

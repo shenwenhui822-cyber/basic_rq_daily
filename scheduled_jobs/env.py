@@ -20,19 +20,31 @@ def _load_dotenv_simple(env_path: Path) -> None:
             os.environ[key] = val
 
 
+def ensure_shanghai_env() -> None:
+    """进程默认 TZ 为上海，使 loguru / datetime.now 与 cron 一致（不覆盖已有 TZ）。"""
+    import time
+
+    if "TZ" not in os.environ:
+        os.environ["TZ"] = "Asia/Shanghai"
+        if hasattr(time, "tzset"):
+            time.tzset()
+
+
 def load_dotenv_if_present() -> bool:
     """加载项目根目录 .env；成功返回 True。"""
     env_path = ROOT / ".env"
-    if not env_path.is_file():
-        return False
-    try:
-        from dotenv import load_dotenv
+    loaded = False
+    if env_path.is_file():
+        try:
+            from dotenv import load_dotenv
 
-        load_dotenv(env_path)
-        return True
-    except ImportError:
-        _load_dotenv_simple(env_path)
-        return True
+            load_dotenv(env_path)
+            loaded = True
+        except ImportError:
+            _load_dotenv_simple(env_path)
+            loaded = True
+    ensure_shanghai_env()
+    return loaded
 
 
 def default_port() -> int:

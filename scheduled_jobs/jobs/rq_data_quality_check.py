@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -43,10 +43,10 @@ def _recent_trade_day_range(
 
 def run() -> JobResult:
     from check_historical_data.check_historical_data import run_check
-    from trade_date_utils import is_trade_day
+    from trade_date_utils import is_trade_day, now_shanghai, today_shanghai
 
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = date.today().isoformat()
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
+    today = today_shanghai().isoformat()
     mongo_alias = os.environ.get(
         "DATA_QUALITY_MONGO_ALIAS",
         os.environ.get("MONGO_TRADE_ALIAS", "wonderwz27018_ro"),
@@ -73,7 +73,7 @@ def run() -> JobResult:
     )
 
     report_dir = _ROOT / "check_historical_data" / "reports"
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = now_shanghai().strftime("%Y%m%d_%H%M%S")
     report_path = report_dir / f"scheduled_{stamp}.txt"
 
     try:

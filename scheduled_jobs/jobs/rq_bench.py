@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -23,11 +22,11 @@ def run() -> JobResult:
 
     bootstrap(str(_ROOT / "rq_daily_update" / "update_rq_bench.py"), backfill=True)
     from rq_history_backfill.backfill_rq_bench import create_indexes_rq_bench, update_rq_bench
-    from trade_date_utils import is_trade_day, previous_trade_date
+    from trade_date_utils import is_trade_day, now_shanghai, previous_trade_date, today_shanghai
     from usedbdef import get_client
 
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = date.today().isoformat()
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
+    today = today_shanghai().isoformat()
     mongo_alias = mongo_trade_alias()
     mongo_db = "basic_rq"
     client = get_client(mongo_alias)

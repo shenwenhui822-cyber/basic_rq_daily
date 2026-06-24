@@ -71,7 +71,7 @@ def previous_trade_date(
     as_of: date | None = None,
 ) -> str:
     """返回严格早于 ``as_of``（默认今天）的最近交易日字符串。"""
-    ref = norm_trade_date_str((as_of or date.today()).isoformat())
+    ref = norm_trade_date_str((as_of or today_shanghai()).isoformat())
     c = _get_client(mongo_alias, client)
     doc = c.economic.trade_dates.find_one(
         {"trade_date": {"$lt": ref}},

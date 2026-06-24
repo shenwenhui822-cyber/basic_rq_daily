@@ -25,6 +25,7 @@ PIP_CMD="pip3"
 REQ_FILE="requirements-basic_rq_daily.txt"
 
 export RQBASE_SCHEDULE_PORT="$PORT"
+export TZ=Asia/Shanghai
 
 # --- 激活虚拟环境 ---
 activate_venv() {

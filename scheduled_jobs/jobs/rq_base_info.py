@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +12,7 @@ if str(_ROOT) not in sys.path:
 from scheduled_jobs.jobs.base import JobResult
 from scheduled_jobs.config import mongo_trade_alias
 from scheduled_jobs.notify.email import DATE_FMT_DB
+from trade_date_utils import is_trade_day, now_shanghai, previous_trade_date, today_shanghai
 
 SCHEDULER_JOB_KEY = "rq_base_info"
 
@@ -21,11 +21,10 @@ def run() -> JobResult:
     from rq_paths import bootstrap
 
     bootstrap(str(_ROOT / "rq_daily_update" / "update_rqbaseInfo.py"))
-    from trade_date_utils import is_trade_day, previous_trade_date
     from rq_daily_update.update_rqbaseInfo import update_rqbaseInfo
 
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = date.today().isoformat()
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
+    today = today_shanghai().isoformat()
 
     mongo_alias = mongo_trade_alias()
     if not is_trade_day(today, mongo_alias=mongo_alias):

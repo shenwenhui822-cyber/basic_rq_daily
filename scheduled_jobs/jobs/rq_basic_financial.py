@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -21,11 +20,11 @@ def run() -> JobResult:
     from rq_paths import bootstrap
 
     bootstrap(str(_ROOT / "rq_daily_update" / "update_rq_basic_financail.py"))
-    from trade_date_utils import is_trade_day, previous_trade_date
+    from trade_date_utils import is_trade_day, now_shanghai, previous_trade_date, today_shanghai
     from rq_daily_update.update_rq_basic_financail import update_rq_basic_financail
 
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = date.today().isoformat()
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
+    today = today_shanghai().isoformat()
 
     mongo_alias = mongo_trade_alias()
     if not is_trade_day(today, mongo_alias=mongo_alias):

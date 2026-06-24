@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
-from typing import Any
+from trade_date_utils import now_shanghai
 
 from loguru import logger
 
@@ -29,7 +28,7 @@ def write_job_log(spec: JobSpec, result: JobResult, *, notify: bool) -> str | No
 
     返回 inserted_id 字符串；写入失败时记录日志并返回 None。
     """
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
     doc: dict[str, Any] = {
         "run_at": run_at,
         "job_id": result.job_id,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -37,11 +37,11 @@ def run() -> JobResult:
         _load_all_trade_days_sorted,
         _trade_days_in_sorted,
     )
-    from trade_date_utils import is_trade_day, previous_trade_date
+    from trade_date_utils import is_trade_day, now_shanghai, previous_trade_date, today_shanghai
     from usedbdef import get_client
 
-    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = date.today().isoformat()
+    run_at = now_shanghai().strftime("%Y-%m-%d %H:%M:%S")
+    today = today_shanghai().isoformat()
     mongo_alias = mongo_trade_alias()
     mongo_db = "basic_rq"
     client = get_client(mongo_alias)
