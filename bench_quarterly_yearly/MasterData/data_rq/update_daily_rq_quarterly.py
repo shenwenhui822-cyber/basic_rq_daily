@@ -36,6 +36,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from DataBase.db_client import get_client_U
+from MasterData.data_rq.fin_pit_fallback import ffill_from_prev_trade_snapshot
 from MasterData.data_rq.ffill_rq_quarterly_yearly_missing import (
     _load_all_trade_days_sorted,
     _norm_date,
@@ -219,8 +220,21 @@ def main() -> None:
         target_coll="rq_quarterly",
     )
     if not ok:
-        raise SystemExit(f"rq_quarterly 日更失败：pre={pre_trade_day} today={today_for_update}")
-    print(f"[daily] rq_quarterly 已更新：pre={pre_trade_day} today={today_for_update}")
+        all_td = _load_all_trade_days_sorted(client)
+        coll = client[args.mongo_db]["rq_quarterly"]
+        ffill_ok, ffill_rows, ffill_source = ffill_from_prev_trade_snapshot(
+            coll, pre_trade_day, all_td, verbose=True
+        )
+        if not ffill_ok:
+            raise SystemExit(
+                f"rq_quarterly 日更失败且前填失败：pre={pre_trade_day} today={today_for_update}"
+            )
+        print(
+            f"[fallback] PIT 无数据，已从 {ffill_source} 前填 {ffill_rows} 条 "
+            f"(pre={pre_trade_day})"
+        )
+    else:
+        print(f"[daily] rq_quarterly 已更新：pre={pre_trade_day} today={today_for_update}")
 
     if args.no_backfill:
         print("[done] 已完成当日日更（未执行 backfill）")

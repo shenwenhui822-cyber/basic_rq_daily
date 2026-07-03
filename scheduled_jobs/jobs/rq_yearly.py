@@ -30,6 +30,7 @@ def run() -> JobResult:
     if str(_BENCH_DIR) not in sys.path:
         sys.path.insert(0, str(_BENCH_DIR))
 
+    from MasterData.data_rq.fin_pit_fallback import ffill_from_prev_trade_snapshot
     from MasterData.data_rq.update_rq_quarterly_yearly_bench import update_rq_yearly
     from MasterData.data_rq.ffill_rq_quarterly_yearly_to_universe import ffill_fin_to_universe
     from MasterData.data_rq.ffill_rq_quarterly_yearly_missing import (
@@ -60,8 +61,11 @@ def run() -> JobResult:
     idx = all_td.index(pre) if pre in all_td else -1
     today_for_update = all_td[idx + 1] if idx + 1 < len(all_td) else pre
 
-    # 1. 拉取真实 PIT
-    ok, pulled = _unpack_update_result(
+    db = client[mongo_db]
+    y_coll = db["rq_yearly"]
+
+    # 1. 拉取真实 PIT；无数据则从前一有效交易日复制截面
+    pit_ok, pulled = _unpack_update_result(
         update_rq_yearly(
             pre,
             today_for_update,
@@ -70,22 +74,27 @@ def run() -> JobResult:
             target_coll="rq_yearly",
         )
     )
-
-    if not ok:
-        return JobResult(
-            job_id=SCHEDULER_JOB_KEY,
-            ok=False,
-            message=f"年报 PIT 更新失败 pre={pre}",
-            detail={"run_at": run_at, "target_date": pre},
+    ffill_source: str | None = None
+    ffill_rows = 0
+    if not pit_ok:
+        ffill_ok, ffill_rows, ffill_source = ffill_from_prev_trade_snapshot(
+            y_coll, pre, all_td, verbose=True
         )
+        if not ffill_ok:
+            return JobResult(
+                job_id=SCHEDULER_JOB_KEY,
+                ok=False,
+                message=f"年报 PIT 无数据且前填失败 pre={pre}",
+                detail={"run_at": run_at, "target_date": pre},
+            )
+        print(f"[fallback] 年报 PIT 无数据，已从 {ffill_source} 前填 {ffill_rows} 条")
 
     # 2. 近期 backfill 统计
     start_back = all_td[max(0, idx - 30)] if idx > 0 else pre
     backfill_days = _trade_days_in_sorted(all_td, start_back, pre)
 
-    db = client[mongo_db]
     di, backfilled_rows = ffill_fin_to_universe(
-        db["rq_yearly"],
+        y_coll,
         db["rq_base_info"],
         backfill_days,
         dry_run=False,
@@ -96,12 +105,18 @@ def run() -> JobResult:
         mongo_delay=0.5,
     )
 
-    total_inserted = pulled + backfilled_rows
-
-    msg = (
-        f"年报更新完成 pre={pre} | "
-        f"拉取 {pulled} 条 | 拟补 {backfilled_rows} 条 | 总插入 {total_inserted} 条"
-    )
+    total_inserted = pulled + ffill_rows + backfilled_rows
+    if pit_ok:
+        msg = (
+            f"年报更新完成 pre={pre} | "
+            f"拉取 {pulled} 条 | 拟补 {backfilled_rows} 条 | 总插入 {total_inserted} 条"
+        )
+    else:
+        msg = (
+            f"年报前填完成 pre={pre} | "
+            f"PIT 无数据，从 {ffill_source} 复制 {ffill_rows} 条 | "
+            f"拟补 {backfilled_rows} 条 | 总插入 {total_inserted} 条"
+        )
 
     return JobResult(
         job_id=SCHEDULER_JOB_KEY,
@@ -111,7 +126,10 @@ def run() -> JobResult:
         detail={
             "run_at": run_at,
             "target_date": pre,
+            "pit_ok": pit_ok,
             "pulled": pulled,
+            "ffill_source": ffill_source,
+            "ffill_rows": ffill_rows,
             "backfilled_days": di,
             "backfilled_rows": backfilled_rows,
             "total_inserted": total_inserted,
