@@ -110,48 +110,95 @@ precheck_linux_env() {
 }
 
 # --- 若目标端口已被占用则终止占用进程 ---
-ensure_port_free() {
-    echo "[INFO] 检查端口 $PORT 是否被占用..."
-    local pids=""
+# 说明：无 root 时 ss -lptp 常不显示 pid=，不能仅凭「无 pid」判断空闲。
+port_is_listening() {
+    if command -v ss >/dev/null 2>&1; then
+        # 只看是否 LISTEN，不依赖 pid（无 sudo 时 pid 常为空）
+        ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q LISTEN
+        return $?
+    fi
+    if command -v "$PY_CMD" >/dev/null 2>&1; then
+        "$PY_CMD" -c "
+import socket
+s = socket.socket()
+s.settimeout(0.5)
+try:
+    s.connect(('127.0.0.1', int('$PORT')))
+    raise SystemExit(0)
+except Exception:
+    raise SystemExit(1)
+finally:
+    s.close()
+" 2>/dev/null
+        return $?
+    fi
+    return 1
+}
 
+collect_port_pids() {
+    local pids=""
     if command -v lsof >/dev/null 2>&1; then
         pids=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)
-    elif command -v ss >/dev/null 2>&1; then
+    fi
+    if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
         pids=$(ss -lptn "sport = :$PORT" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u | tr '\n' ' ')
-    elif command -v fuser >/dev/null 2>&1; then
-        if fuser -n tcp "$PORT" >/dev/null 2>&1; then
-            echo "[WARN] 端口 $PORT 已被占用，使用 fuser 终止..."
-            fuser -k -TERM "$PORT/tcp" 2>/dev/null || true
-            sleep 1
-            fuser -n tcp "$PORT" >/dev/null 2>&1 && fuser -k -KILL "$PORT/tcp" 2>/dev/null || true
-            echo "[INFO] 已尝试释放端口 $PORT"
-            return 0
+    fi
+    # 仍无 pid：按进程名兜底（本仓库服务）
+    if [ -z "$pids" ]; then
+        pids=$(pgrep -f "[p]ython([0-9.]*)? .*main\\.py.*--port[= ]*$PORT" 2>/dev/null || true)
+        if [ -z "$pids" ]; then
+            pids=$(pgrep -f "[p]ython([0-9.]*)? .*main\\.py" 2>/dev/null || true)
         fi
+    fi
+    echo "$pids" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //;s/ $//'
+}
+
+ensure_port_free() {
+    echo "[INFO] 检查端口 $PORT 是否被占用..."
+
+    if ! port_is_listening; then
         echo "[INFO] 端口 $PORT 空闲。"
-        return 0
-    else
-        echo "[WARN] 未找到 lsof/ss/fuser，跳过端口占用检查。"
         return 0
     fi
 
+    local pids
+    pids=$(collect_port_pids)
     if [ -n "$pids" ]; then
-        echo "[WARN] 端口 $PORT 已被进程占用 (PID: $pids)，正在终止..."
+        echo "[WARN] 端口 $PORT 已被占用 (PID: $pids)，正在终止..."
         # shellcheck disable=SC2086
         kill -TERM $pids 2>/dev/null || true
+        sleep 2
+        if port_is_listening; then
+            pids=$(collect_port_pids)
+            if [ -n "$pids" ]; then
+                echo "[WARN] 仍占用，强制 kill -KILL: $pids"
+                # shellcheck disable=SC2086
+                kill -KILL $pids 2>/dev/null || true
+                sleep 1
+            fi
+        fi
+    elif command -v fuser >/dev/null 2>&1; then
+        echo "[WARN] 端口 $PORT 有监听但无法解析 PID，尝试 fuser 释放..."
+        fuser -k -TERM "$PORT/tcp" 2>/dev/null || true
+        sleep 2
+        fuser -k -KILL "$PORT/tcp" 2>/dev/null || true
         sleep 1
-        if command -v lsof >/dev/null 2>&1; then
-            pids=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)
-        else
-            pids=$(ss -lptn "sport = :$PORT" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u | tr '\n' ' ')
-        fi
-        if [ -n "$pids" ]; then
-            # shellcheck disable=SC2086
-            kill -KILL $pids 2>/dev/null || true
-        fi
-        echo "[INFO] 已释放端口 $PORT"
     else
-        echo "[INFO] 端口 $PORT 空闲。"
+        echo "[ERROR] 端口 $PORT 已被占用，但当前用户看不到 PID（ss 无 pid=）。"
+        echo "[ERROR] 请手动执行后重试："
+        echo "        ss -ltnp | grep $PORT"
+        echo "        pgrep -af 'main.py'"
+        echo "        kill <PID>   # 必要时 kill -9 <PID>"
+        exit 1
     fi
+
+    if port_is_listening; then
+        echo "[ERROR] 未能释放端口 $PORT，请手动 kill 占用进程后重试。"
+        echo "        ss -ltnp | grep $PORT"
+        echo "        pgrep -af 'main.py'"
+        exit 1
+    fi
+    echo "[INFO] 已释放端口 $PORT"
 }
 
 # --- 启动定时任务服务 ---
