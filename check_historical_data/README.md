@@ -54,6 +54,6 @@ python check_historical_data/check_historical_data.py --output check_historical_
 
 1. **唯一性**：`norm_date` + 业务键不得重复（分钟线：`time + code_rq`）  
 2. **字段完整**：按交易日逐日拉取，检查必填字段是否存在（值可为 null）  
-3. **日期完整**：区间内每个交易日均有数据；`rq_bench` 额外提示每日是否少于 6 条  
+3. **日期完整**：区间内每个交易日均有数据；`rq_bench` 额外提示每日是否少于 7 条  
 
 修改默认起始日或字段：编辑 `check_historical_data.py` 内 `TABLE_SPECS`。

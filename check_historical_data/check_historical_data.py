@@ -350,8 +350,8 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
         ),
         nullable_fields=(),
         unique_key=("code",),
-        rule_desc="基准指数日行情；每日 6 个 Wind 指数 code 各一条",
-        expected_docs_per_day=6,
+        rule_desc="基准指数日行情；每日 7 个 Wind 指数 code 各一条（含 000688.SH 科创50）",
+        expected_docs_per_day=7,
     ),
     TableSpec(
         db="basic_rq",

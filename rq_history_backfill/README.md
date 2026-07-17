@@ -29,6 +29,8 @@ python rq_history_backfill/get_SWL2_2DB_Main.py --start 2026-03-16 --end 2026-03
 python3 rq_history_backfill/get_SWL2_2DB_price_Main.py --start 2023-04-01 --end 2026-05-25
 python rq_history_backfill/rq_getRangeDailyPriceLongrun.py --start 2026-03-16 --end 2026-03-18
 python rq_history_backfill/backfill_rq_bench.py --start 2020-01-02 --end 2026-01-09
+# 仅补科创50（000688.SH）历史，不删其它指数
+python rq_history_backfill/backfill_rq_bench.py --start 2019-07-22 --end 2026-07-16 --codes 000688.SH
 
 # 季报历史（步骤 1 拉米筐，详见 季报年报运行指南.md）
 python -u rq_history_backfill/backfill_rq_quarterly_yearly.py --collections quarterly --start 2015-01-05 --end 2026-05-27 --no-ffill --skip-existing --mongo-alias wonderwz27018_rw
