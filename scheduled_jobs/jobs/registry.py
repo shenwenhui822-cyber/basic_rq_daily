@@ -86,7 +86,7 @@ def _ensure_runner_map() -> None:
             ),
             rq_sync_basic_rq.SCHEDULER_JOB_KEY: (
                 rq_sync_basic_rq.run,
-                "basic_rq 9 表：交易日 08:30 同步上一交易日到远端 MongoDB",
+                "basic_rq 9 表 + rq_minute：交易日同步上一交易日到远端 MongoDB",
             ),
         }
     )

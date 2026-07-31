@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-将 basic_rq 库 9 张表按交易日增量同步到远端 MongoDB（默认 T-1）。
-
-默认同时同步同日 ``rq_minute.rq_minute_none_YYYY``（按交易日年份分表）。
+将 rq_minute.rq_minute_none_YYYY 按交易日增量同步到远端 MongoDB（默认 T-1）。
 
 源库：wonderwz27018_rw @ 192.168.110.199:27018
 目标：wonderwz203_19_rw @ 114.80.62.203:27019
 
+集合按交易日年份分表，如 2026-06-03 → rq_minute_none_2026。
+
 用法（basic_rq_daily 根目录）：
-  python rq_daily_update/sync_basic_rq_to_remote.py
-  python rq_daily_update/sync_basic_rq_to_remote.py --date 2026-06-03
-  python rq_daily_update/sync_basic_rq_to_remote.py --start 2026-01-01 --end 2026-03-31
-  python rq_daily_update/sync_basic_rq_to_remote.py --date 2026-06-03 --skip-minute
+  python rq_daily_update/sync_rq_minute_to_remote.py
+  python rq_daily_update/sync_rq_minute_to_remote.py --date 2026-06-03
+  python rq_daily_update/sync_rq_minute_to_remote.py --start 2026-01-05 --end 2026-03-31
 """
 from __future__ import annotations
 
@@ -30,21 +29,12 @@ bootstrap(__file__, daily=True)
 
 from usedbdef import get_client
 
-BASIC_RQ_DB = "basic_rq"
-BASIC_RQ_COLLECTIONS: tuple[str, ...] = (
-    "rq_base_info",
-    "rq_basic_financial",
-    "rq_base_index",
-    "rq_daily_indusSWL2",
-    "rq_daily_indusSWL2_price",
-    "rq_bench",
-    "rq_daily_price_none",
-    "rq_quarterly",
-    "rq_yearly",
-)
+MINUTE_DB = "rq_minute"
+MINUTE_COLLECTION_PREFIX = "rq_minute_none_"
 DEFAULT_SOURCE_ALIAS = "wonderwz27018_rw"
 DEFAULT_TARGET_ALIAS = "wonderwz203_19_rw"
 INSERT_BATCH = 5000
+PROGRESS_EVERY = 50_000
 
 
 def _log(msg: str) -> None:
@@ -56,7 +46,16 @@ def date_variants(d: str) -> list[str]:
     return list({d, d.replace("-", "/"), d.replace("/", "-")})
 
 
-def sync_collection_for_date(
+def minute_collection_for_date(trade_date: str) -> str:
+    """按交易日年份返回集合名，如 ``rq_minute_none_2026``。"""
+    normalized = str(trade_date).strip().replace("/", "-")[:10]
+    year = normalized[:4]
+    if not year.isdigit():
+        raise ValueError(f"无法从交易日解析年份: {trade_date!r}")
+    return f"{MINUTE_COLLECTION_PREFIX}{year}"
+
+
+def sync_minute_for_date(
     *,
     src_col: Any,
     dst_col: Any,
@@ -76,6 +75,8 @@ def sync_collection_for_date(
             dst_col.insert_many(batch, ordered=False)
             inserted += len(batch)
             batch = []
+            if inserted % PROGRESS_EVERY < batch_size:
+                _log(f"      …已写入 {inserted}/{src_count}")
     if batch:
         dst_col.insert_many(batch, ordered=False)
         inserted += len(batch)
@@ -83,61 +84,54 @@ def sync_collection_for_date(
     return {"source": src_count, "deleted": deleted, "inserted": inserted}
 
 
-def sync_basic_rq_for_dates(
+def sync_rq_minute_for_dates(
     trade_dates: list[str],
     *,
     source_alias: str = DEFAULT_SOURCE_ALIAS,
     target_alias: str = DEFAULT_TARGET_ALIAS,
-    mongo_db: str = BASIC_RQ_DB,
-    collections: list[str] | None = None,
-    with_minute: bool = True,
+    mongo_db: str = MINUTE_DB,
 ) -> dict[str, Any]:
-    cols = list(collections or BASIC_RQ_COLLECTIONS)
-    unknown = set(cols) - set(BASIC_RQ_COLLECTIONS)
-    if unknown:
-        raise ValueError(f"未知集合: {sorted(unknown)}")
-
     src_client = get_client(source_alias)
     dst_client = get_client(target_alias)
     src_db = src_client[mongo_db]
     dst_db = dst_client[mongo_db]
 
-    per_date: dict[str, dict[str, dict[str, int]]] = {}
+    per_date: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
 
     for trade_date in trade_dates:
-        _log(f"\n=== 同步交易日 {trade_date} ===")
-        day_stats: dict[str, dict[str, int]] = {}
-        for name in cols:
-            _log(f"  {name} …")
-            stats = sync_collection_for_date(
-                src_col=src_db[name],
-                dst_col=dst_db[name],
-                trade_date=trade_date,
-            )
-            day_stats[name] = stats
-            _log(
-                f"    源 {stats['source']} 条，"
-                f"删目标 {stats['deleted']} 条，写入 {stats['inserted']} 条"
-            )
-            if stats["source"] == 0:
-                errors.append(f"{trade_date}/{name}: 源库无数据")
-            elif stats["source"] != stats["inserted"]:
-                errors.append(
-                    f"{trade_date}/{name}: 源 {stats['source']} 条，实际写入 {stats['inserted']} 条"
-                )
-        per_date[trade_date] = day_stats
+        coll_name = minute_collection_for_date(trade_date)
+        _log(f"\n=== 同步分钟线 {trade_date} → {mongo_db}.{coll_name} ===")
+        if coll_name not in src_db.list_collection_names():
+            err = f"{trade_date}/{coll_name}: 源库无该集合"
+            _log(f"  {err}")
+            errors.append(err)
+            per_date[trade_date] = {
+                "collection": coll_name,
+                "source": 0,
+                "deleted": 0,
+                "inserted": 0,
+            }
+            continue
 
-    minute_result: dict[str, Any] | None = None
-    if with_minute:
-        from sync_rq_minute_to_remote import sync_rq_minute_for_dates
-
-        minute_result = sync_rq_minute_for_dates(
-            trade_dates,
-            source_alias=source_alias,
-            target_alias=target_alias,
+        stats = sync_minute_for_date(
+            src_col=src_db[coll_name],
+            dst_col=dst_db[coll_name],
+            trade_date=trade_date,
         )
-        errors.extend(minute_result.get("errors") or [])
+        stats["collection"] = coll_name
+        per_date[trade_date] = stats
+        _log(
+            f"  源 {stats['source']} 条，"
+            f"删目标 {stats['deleted']} 条，写入 {stats['inserted']} 条"
+        )
+        if stats["source"] == 0:
+            errors.append(f"{trade_date}/{coll_name}: 源库无数据")
+        elif stats["source"] != stats["inserted"]:
+            errors.append(
+                f"{trade_date}/{coll_name}: 源 {stats['source']} 条，"
+                f"实际写入 {stats['inserted']} 条"
+            )
 
     ok = not errors
     return {
@@ -145,37 +139,34 @@ def sync_basic_rq_for_dates(
         "source_alias": source_alias,
         "target_alias": target_alias,
         "mongo_db": mongo_db,
-        "collections": cols,
         "trade_dates": trade_dates,
         "per_date": per_date,
-        "with_minute": with_minute,
-        "minute": minute_result,
         "errors": errors,
     }
 
 
-def sync_basic_rq_t_minus_one(
+def sync_rq_minute_t_minus_one(
     *,
     source_alias: str = DEFAULT_SOURCE_ALIAS,
     target_alias: str = DEFAULT_TARGET_ALIAS,
     mongo_trade_alias: str | None = None,
     fmt: str = "%Y-%m-%d",
-    with_minute: bool = True,
 ) -> dict[str, Any]:
     from trade_date_utils import previous_trade_date
 
     alias = mongo_trade_alias or source_alias
     target = previous_trade_date(mongo_alias=alias, fmt=fmt)
-    return sync_basic_rq_for_dates(
+    return sync_rq_minute_for_dates(
         [target],
         source_alias=source_alias,
         target_alias=target_alias,
-        with_minute=with_minute,
     )
 
 
 def _cli_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="同步 basic_rq 9 表到远端 MongoDB")
+    p = argparse.ArgumentParser(
+        description="同步 rq_minute.rq_minute_none_YYYY 到远端 MongoDB"
+    )
     p.add_argument("--date", help="单个交易日 YYYY-MM-DD；省略且未指定区间时取 T-1")
     p.add_argument("--start", help="区间起（含），与 --end 合用")
     p.add_argument("--end", help="区间止（含）")
@@ -194,24 +185,12 @@ def _cli_args() -> argparse.Namespace:
         default=None,
         help="解析 T-1 / 交易日历时用的别名（默认与 --source-alias 相同）",
     )
-    p.add_argument(
-        "--collection",
-        action="append",
-        dest="collections",
-        help="只同步指定集合，可重复",
-    )
-    p.add_argument(
-        "--skip-minute",
-        action="store_true",
-        help="不同步 rq_minute.rq_minute_none_YYYY（默认会同步同日分钟线）",
-    )
     return p.parse_args()
 
 
 def main() -> int:
     args = _cli_args()
     trade_alias = args.mongo_trade_alias or args.source_alias
-    with_minute = not args.skip_minute
 
     try:
         if args.start or args.end:
@@ -221,27 +200,22 @@ def main() -> int:
 
             start_s, end_s = parse_start_end_range(args.start, args.end)
             dates = list_trade_dates(start_s, end_s, mongo_alias=trade_alias)
-            result = sync_basic_rq_for_dates(
+            result = sync_rq_minute_for_dates(
                 dates,
                 source_alias=args.source_alias,
                 target_alias=args.target_alias,
-                collections=args.collections,
-                with_minute=with_minute,
             )
         elif args.date:
-            result = sync_basic_rq_for_dates(
+            result = sync_rq_minute_for_dates(
                 [str(args.date).strip().replace("/", "-")],
                 source_alias=args.source_alias,
                 target_alias=args.target_alias,
-                collections=args.collections,
-                with_minute=with_minute,
             )
         else:
-            result = sync_basic_rq_t_minus_one(
+            result = sync_rq_minute_t_minus_one(
                 source_alias=args.source_alias,
                 target_alias=args.target_alias,
                 mongo_trade_alias=trade_alias,
-                with_minute=with_minute,
             )
 
         if result["errors"]:

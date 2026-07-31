@@ -14,6 +14,6 @@ def mongo_trade_alias() -> str:
 
 def mongo_sync_target_alias() -> str:
     return (
-        os.environ.get("BASIC_RQ_SYNC_TARGET_ALIAS", "114.80.62.203_rw").strip()
-        or "114.80.62.203_rw"
+        os.environ.get("BASIC_RQ_SYNC_TARGET_ALIAS", "wonderwz203_19_rw").strip()
+        or "wonderwz203_19_rw"
     )

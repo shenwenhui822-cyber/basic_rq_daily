@@ -3,7 +3,7 @@
 将 basic_rq 指定表、指定交易日的数据同步到远端 MongoDB 114.80.62.203:27019。
 
 源：wonderwz27018_rw @ 192.168.110.199:27018
-目标：114.80.62.203_rw @ 114.80.62.203:27019
+目标：wonderwz203_19_rw @ 114.80.62.203:27019
 
 用法（basic_rq_daily 根目录）：
   # 列出可同步的表
@@ -21,7 +21,7 @@
 
   # 自定义源/目标别名
   python rq_daily_update/sync_table_day_to_remote.py --table rq_bench --date 2026-07-02 \\
-      --source-alias wonderwz27018_rw --target-alias 114.80.62.203_rw
+      --source-alias wonderwz27018_rw --target-alias wonderwz203_19_rw
 """
 from __future__ import annotations
 
@@ -200,6 +200,7 @@ def main() -> int:
         target_alias=args.target_alias,
         mongo_db=args.mongo_db,
         collections=tables,
+        with_minute=False,
     )
 
     if result["errors"]:
