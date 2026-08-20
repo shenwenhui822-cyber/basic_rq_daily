@@ -59,7 +59,7 @@ EXPECTED_STOCKS_PER_DAY = 5193
 _STOCK_COUNT_TOLERANCE = 200
 
 try:
-    rq.init("18616633529", "wuzhi2020")
+    rq.init("15317321758", "WuZhi@2026")
     print("✅ RQData 连接成功")
 except Exception as e:
     print(f"❌ RQData 连接失败：{e}")

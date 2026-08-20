@@ -35,7 +35,7 @@ from MasterData.data_rq.update_rq_bench import create_indexes_rq_bench, update_r
 
 # 与项目内其他 data_rq 脚本保持一致（可改为环境变量）
 try:
-    rq.init("18616633529", "wuzhi2020")
+    rq.init("15317321758", "WuZhi@2026")
     print("✅ RQData 连接成功 (update_rq_quarterly_yearly_bench)")
 except Exception as e:
     print(f"❌ RQData 连接失败：{e}")

@@ -61,7 +61,7 @@ def init_rq() -> None:
     global _RQ_INITIALIZED
     if _RQ_INITIALIZED:
         return
-    rq.init("18616633529", "wuzhi2020")
+    rq.init("15317321758", "WuZhi@2026")
     print("RQData 连接成功 (rq_bench)")
     _RQ_INITIALIZED = True
 

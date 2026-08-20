@@ -55,7 +55,7 @@ def _init_rq() -> None:
     if _RQ_INITIALIZED:
         return
     try:
-        rq.init("18616633529", "wuzhi2020")
+        rq.init("15317321758", "WuZhi@2026")
         print("RQData 连接成功")
         _RQ_INITIALIZED = True
     except Exception as exc:
