@@ -20,6 +20,7 @@ SCHEDULE_ENTRIES: list[tuple[str, str, dict[str, Any]]] = [
     ("07:18", "update_rqDailyPrice", {"scheduler_job_key": "rq_daily_price"}),
     ("07:20", "update_rq_quarterly", {"scheduler_job_key": "rq_quarterly"}),
     ("07:25", "update_rq_yearly", {"scheduler_job_key": "rq_yearly"}),
+    ("07:27", "update_rq_alpha101", {"scheduler_job_key": "rq_alpha101"}),
     ("07:30", "update_rqMinPrice", {"scheduler_job_key": "rq_minute"}),
     ("07:40", "sync_basic_rq_to_remote", {"scheduler_job_key": "rq_sync_basic_rq"}),
     # ("07:45", "check_historical_data", {"scheduler_job_key": "rq_data_quality_check"}),

@@ -19,6 +19,7 @@ def _ensure_runner_map() -> None:
     if _RUNNER_MAP:
         return
     from scheduled_jobs.jobs import (
+        rq_alpha101,
         rq_base_info,
         rq_basic_financial,
         rq_bench,
@@ -71,6 +72,10 @@ def _ensure_runner_map() -> None:
             rq_yearly.SCHEDULER_JOB_KEY: (
                 rq_yearly.run,
                 "rq_yearly：交易日 9:25 更新上一交易日年报（含 backfill 统计）",
+            ),
+            rq_alpha101.SCHEDULER_JOB_KEY: (
+                rq_alpha101.run,
+                "rq_alpha101：交易日更新上一交易日 WorldQuant Alpha101（依赖 rq_base_info）",
             ),
             rq_minute.SCHEDULER_JOB_KEY: (
                 rq_minute.run,

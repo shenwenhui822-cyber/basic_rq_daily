@@ -14,6 +14,7 @@
 | 6 | `rq_getRangeDailyPriceLongrun.py` | `rq_daily_price_none` |
 | 7 | `backfill_rq_bench.py` | `rq_bench` |
 | 8 | `backfill_rq_quarterly_yearly.py` | `rq_quarterly` / `rq_yearly` |
+| 9 | `backfill_rq_alpha101.py` | `rq_alpha101` |
 
 **季报 / 年报**完整命令与两阶段说明见 **[季报年报运行指南.md](./季报年报运行指南.md)**。
 
@@ -34,6 +35,10 @@ python rq_history_backfill/backfill_rq_bench.py --start 2019-07-22 --end 2026-07
 
 # 季报历史（步骤 1 拉米筐，详见 季报年报运行指南.md）
 python -u rq_history_backfill/backfill_rq_quarterly_yearly.py --collections quarterly --start 2015-01-05 --end 2026-05-27 --no-ffill --skip-existing --mongo-alias wonderwz27018_rw
+
+# Alpha101（依赖同日 rq_base_info；流量达 50% 停）
+python rq_history_backfill/backfill_rq_alpha101.py --date 2026-09-15
+python rq_history_backfill/backfill_rq_alpha101.py --start 2026-01-05 --end 2026-09-15
 
 ```
 

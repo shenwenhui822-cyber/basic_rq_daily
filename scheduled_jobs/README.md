@@ -26,6 +26,7 @@ SCHEDULE_ENTRIES = [
 | 09:18 | `rq_daily_price` | 上一交易日 `rq_daily_price_none`（全市场不复权日线） |
 | 09:20 | `rq_quarterly` | 上一交易日 `rq_quarterly`（季报 PIT + ffill） |
 | 09:25 | `rq_yearly` | 上一交易日 `rq_yearly`（年报 PIT + ffill） |
+| 07:27 | `rq_alpha101` | 上一交易日 `rq_alpha101`（WorldQuant Alpha101） |
 | 09:35 | `rq_minute` | 上一交易日 `rq_minute_none_YYYY`（全市场 1 分钟线，按年分表） |
 | 10:00 | `rq_minute_backfill` | 10:00 起至 14:40 按月倒序批量补历史分钟线 |
 
