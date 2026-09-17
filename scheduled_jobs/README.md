@@ -24,6 +24,7 @@ SCHEDULE_ENTRIES = [
 | 09:13 | `rq_swl2_price` | 上一交易日 `rq_daily_indusSWL2_price`（申万二级行业价量） |
 | 09:15 | `rq_bench` | 上一交易日 `rq_bench`（基准指数行情） |
 | 09:18 | `rq_daily_price` | 上一交易日 `rq_daily_price_none`（全市场不复权日线） |
+| 07:19 | `rq_etf_daily_price` | ETF 清单日线（非交易日也跑；周六→周五） |
 | 09:20 | `rq_quarterly` | 上一交易日 `rq_quarterly`（季报 PIT + ffill） |
 | 09:25 | `rq_yearly` | 上一交易日 `rq_yearly`（年报 PIT + ffill） |
 | 07:27 | `rq_alpha101` | 上一交易日 `rq_alpha101`（WorldQuant Alpha101） |

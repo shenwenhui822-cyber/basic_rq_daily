@@ -24,6 +24,7 @@ def _ensure_runner_map() -> None:
         rq_basic_financial,
         rq_bench,
         rq_daily_price,
+        rq_etf_daily_price,
         rq_in_index,
         rq_minute,
         rq_minute_backfill,
@@ -61,6 +62,10 @@ def _ensure_runner_map() -> None:
                 rq_daily_price.run,
                 "rq_daily_price_none：交易日更新上一交易日全市场不复权日线（依赖 rq_base_info）",
             ),
+            rq_etf_daily_price.SCHEDULER_JOB_KEY: (
+                rq_etf_daily_price.run,
+                "ETF 清单日线：每日更新上一交易日（含周六等非交易日→周五，非周一）",
+            ),
             rq_bench.SCHEDULER_JOB_KEY: (
                 rq_bench.run,
                 "rq_bench：交易日更新上一交易日基准指数行情",
@@ -91,7 +96,7 @@ def _ensure_runner_map() -> None:
             ),
             rq_sync_basic_rq.SCHEDULER_JOB_KEY: (
                 rq_sync_basic_rq.run,
-                "basic_rq 9 表 + rq_minute：交易日同步上一交易日到远端 MongoDB",
+                "basic_rq 9 表 + rq_minute + rq_alpha101：同步上一交易日到远端",
             ),
         }
     )

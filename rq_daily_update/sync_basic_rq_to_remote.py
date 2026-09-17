@@ -2,7 +2,9 @@
 """
 将 basic_rq 库 9 张表按交易日增量同步到远端 MongoDB（默认 T-1）。
 
-默认同时同步同日 ``rq_minute.rq_minute_none_YYYY``（按交易日年份分表）。
+默认同时同步：
+  - 同日 ``rq_minute.rq_minute_none_YYYY``（按交易日年份分表）
+  - 同日 ``basic_rq.rq_alpha101``
 
 源库：wonderwz27018_rw @ 192.168.110.199:27018
 目标：wonderwz203_19_rw @ 114.80.62.203:27019
@@ -11,7 +13,7 @@
   python rq_daily_update/sync_basic_rq_to_remote.py
   python rq_daily_update/sync_basic_rq_to_remote.py --date 2026-06-03
   python rq_daily_update/sync_basic_rq_to_remote.py --start 2026-01-01 --end 2026-03-31
-  python rq_daily_update/sync_basic_rq_to_remote.py --date 2026-06-03 --skip-minute
+  python rq_daily_update/sync_basic_rq_to_remote.py --date 2026-06-03 --skip-minute --skip-alpha101
 """
 from __future__ import annotations
 
@@ -91,6 +93,7 @@ def sync_basic_rq_for_dates(
     mongo_db: str = BASIC_RQ_DB,
     collections: list[str] | None = None,
     with_minute: bool = True,
+    with_alpha101: bool = True,
 ) -> dict[str, Any]:
     cols = list(collections or BASIC_RQ_COLLECTIONS)
     unknown = set(cols) - set(BASIC_RQ_COLLECTIONS)
@@ -139,6 +142,17 @@ def sync_basic_rq_for_dates(
         )
         errors.extend(minute_result.get("errors") or [])
 
+    alpha101_result: dict[str, Any] | None = None
+    if with_alpha101:
+        from sync_rq_alpha101_to_remote import sync_rq_alpha101_for_dates
+
+        alpha101_result = sync_rq_alpha101_for_dates(
+            trade_dates,
+            source_alias=source_alias,
+            target_alias=target_alias,
+        )
+        errors.extend(alpha101_result.get("errors") or [])
+
     ok = not errors
     return {
         "ok": ok,
@@ -150,6 +164,8 @@ def sync_basic_rq_for_dates(
         "per_date": per_date,
         "with_minute": with_minute,
         "minute": minute_result,
+        "with_alpha101": with_alpha101,
+        "alpha101": alpha101_result,
         "errors": errors,
     }
 
@@ -161,6 +177,7 @@ def sync_basic_rq_t_minus_one(
     mongo_trade_alias: str | None = None,
     fmt: str = "%Y-%m-%d",
     with_minute: bool = True,
+    with_alpha101: bool = True,
 ) -> dict[str, Any]:
     from trade_date_utils import previous_trade_date
 
@@ -171,11 +188,12 @@ def sync_basic_rq_t_minus_one(
         source_alias=source_alias,
         target_alias=target_alias,
         with_minute=with_minute,
+        with_alpha101=with_alpha101,
     )
 
 
 def _cli_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="同步 basic_rq 9 表到远端 MongoDB")
+    p = argparse.ArgumentParser(description="同步 basic_rq 9 表 + 分钟线/Alpha101 到远端")
     p.add_argument("--date", help="单个交易日 YYYY-MM-DD；省略且未指定区间时取 T-1")
     p.add_argument("--start", help="区间起（含），与 --end 合用")
     p.add_argument("--end", help="区间止（含）")
@@ -205,6 +223,11 @@ def _cli_args() -> argparse.Namespace:
         action="store_true",
         help="不同步 rq_minute.rq_minute_none_YYYY（默认会同步同日分钟线）",
     )
+    p.add_argument(
+        "--skip-alpha101",
+        action="store_true",
+        help="不同步 basic_rq.rq_alpha101（默认会同步同日 Alpha101）",
+    )
     return p.parse_args()
 
 
@@ -212,6 +235,7 @@ def main() -> int:
     args = _cli_args()
     trade_alias = args.mongo_trade_alias or args.source_alias
     with_minute = not args.skip_minute
+    with_alpha101 = not args.skip_alpha101
 
     try:
         if args.start or args.end:
@@ -227,6 +251,7 @@ def main() -> int:
                 target_alias=args.target_alias,
                 collections=args.collections,
                 with_minute=with_minute,
+                with_alpha101=with_alpha101,
             )
         elif args.date:
             result = sync_basic_rq_for_dates(
@@ -235,6 +260,7 @@ def main() -> int:
                 target_alias=args.target_alias,
                 collections=args.collections,
                 with_minute=with_minute,
+                with_alpha101=with_alpha101,
             )
         else:
             result = sync_basic_rq_t_minus_one(
@@ -242,6 +268,7 @@ def main() -> int:
                 target_alias=args.target_alias,
                 mongo_trade_alias=trade_alias,
                 with_minute=with_minute,
+                with_alpha101=with_alpha101,
             )
 
         if result["errors"]:

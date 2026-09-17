@@ -201,6 +201,7 @@ def main() -> int:
         mongo_db=args.mongo_db,
         collections=tables,
         with_minute=False,
+        with_alpha101=False,
     )
 
     if result["errors"]:

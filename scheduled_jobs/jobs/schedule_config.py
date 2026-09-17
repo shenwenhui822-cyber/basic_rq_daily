@@ -18,11 +18,18 @@ SCHEDULE_ENTRIES: list[tuple[str, str, dict[str, Any]]] = [
     ("07:13", "update_rq_SWL2_price", {"scheduler_job_key": "rq_swl2_price"}),
     ("07:15", "update_rq_bench", {"scheduler_job_key": "rq_bench"}),
     ("07:18", "update_rqDailyPrice", {"scheduler_job_key": "rq_daily_price"}),
-    ("07:20", "update_rq_quarterly", {"scheduler_job_key": "rq_quarterly"}),
-    ("07:25", "update_rq_yearly", {"scheduler_job_key": "rq_yearly"}),
-    ("07:27", "update_rq_alpha101", {"scheduler_job_key": "rq_alpha101"}),
-    ("07:30", "update_rqMinPrice", {"scheduler_job_key": "rq_minute"}),
-    ("07:40", "sync_basic_rq_to_remote", {"scheduler_job_key": "rq_sync_basic_rq"}),
+    # ETF 清单日更：非交易日也跑；目标日=previous_trade_date（周六→周五，非周一）
+    (
+        "07:20",
+        "update_etf_daily_price",
+        {"scheduler_job_key": "rq_etf_daily_price", "only_on_trade_day": False},
+    ),
+    ("07:23", "update_rq_quarterly", {"scheduler_job_key": "rq_quarterly"}),
+    ("07:27", "update_rq_yearly", {"scheduler_job_key": "rq_yearly"}),
+    ("07:30", "update_rq_alpha101", {"scheduler_job_key": "rq_alpha101"}),
+    ("07:35", "update_rqMinPrice", {"scheduler_job_key": "rq_minute"}),
+    # 9 表 + rq_minute + rq_alpha101 → wonderwz203_19_rw
+    ("07:45", "sync_basic_rq_to_remote", {"scheduler_job_key": "rq_sync_basic_rq"}),
     # ("07:45", "check_historical_data", {"scheduler_job_key": "rq_data_quality_check"}),
     # (
     #     "10:00",

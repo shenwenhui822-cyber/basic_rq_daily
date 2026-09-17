@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""交易日将 basic_rq 9 表 + rq_minute 同日数据同步到远端 MongoDB。"""
+"""交易日将 basic_rq 9 表 + rq_minute + rq_alpha101 同日数据同步到远端 MongoDB。"""
 from __future__ import annotations
 
 import os
@@ -30,15 +30,19 @@ def _sync_source_alias() -> str:
     )
 
 
+def _env_flag_false(name: str) -> bool:
+    """环境变量为 1/true/yes 时表示关闭对应旁路。"""
+    return os.environ.get(name, "").strip() in ("1", "true", "True", "yes", "YES")
+
+
 def _sync_with_minute() -> bool:
     """默认同步分钟线；``BASIC_RQ_SYNC_SKIP_MINUTE=1`` 可跳过。"""
-    return os.environ.get("BASIC_RQ_SYNC_SKIP_MINUTE", "").strip() not in (
-        "1",
-        "true",
-        "True",
-        "yes",
-        "YES",
-    )
+    return not _env_flag_false("BASIC_RQ_SYNC_SKIP_MINUTE")
+
+
+def _sync_with_alpha101() -> bool:
+    """默认同步 Alpha101；``BASIC_RQ_SYNC_SKIP_ALPHA101=1`` 可跳过。"""
+    return not _env_flag_false("BASIC_RQ_SYNC_SKIP_ALPHA101")
 
 
 def run() -> JobResult:
@@ -57,6 +61,7 @@ def run() -> JobResult:
     target_alias = _sync_target_alias()
     trade_alias = mongo_trade_alias()
     with_minute = _sync_with_minute()
+    with_alpha101 = _sync_with_alpha101()
 
     if not is_trade_day(today, mongo_alias=trade_alias):
         return JobResult(
@@ -73,6 +78,7 @@ def run() -> JobResult:
         source_alias=source_alias,
         target_alias=target_alias,
         with_minute=with_minute,
+        with_alpha101=with_alpha101,
     )
 
     summary_lines = [f"同步交易日 {target}：源 {source_alias} -> 目标 {target_alias}"]
@@ -91,10 +97,20 @@ def run() -> JobResult:
             f"删 {mstats.get('deleted', 0)}，写 {mstats.get('inserted', 0)}"
         )
 
+    alpha_detail = result.get("alpha101") or {}
+    if with_alpha101 and alpha_detail.get("per_date"):
+        astats = alpha_detail["per_date"].get(target) or {}
+        summary_lines.append(
+            f"  rq_alpha101: 源 {astats.get('source', 0)}，"
+            f"删 {astats.get('deleted', 0)}，写 {astats.get('inserted', 0)}"
+        )
+
     ok = bool(result["ok"])
     parts = [f"{len(BASIC_RQ_COLLECTIONS)} 张 basic_rq 表"]
     if with_minute:
-        parts.append("rq_minute 同日分钟线")
+        parts.append("rq_minute")
+    if with_alpha101:
+        parts.append("rq_alpha101")
     msg = (
         f"已同步上一交易日 {target}（{' + '.join(parts)}）"
         if ok
@@ -115,6 +131,8 @@ def run() -> JobResult:
             "collections": list(BASIC_RQ_COLLECTIONS),
             "with_minute": with_minute,
             "minute": minute_detail,
+            "with_alpha101": with_alpha101,
+            "alpha101": alpha_detail,
             "errors": result["errors"],
             "summary": "\n".join(summary_lines),
         },
