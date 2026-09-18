@@ -81,7 +81,7 @@ DEFAULT_ETF_CODES: tuple[str, ...] = (
     "515660",
     "518600",
     "518660",
-    "588080",
+    "588000",
 )
 
 DAILY_PRICE_FIELDS = [
